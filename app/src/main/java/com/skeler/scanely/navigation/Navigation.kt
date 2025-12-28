@@ -23,6 +23,9 @@ import com.skeler.scanely.ui.components.GalleryPicker
 import com.skeler.scanely.ui.screens.CameraScreen
 import com.skeler.scanely.ui.screens.HomeScreen
 import com.skeler.scanely.ui.screens.ResultsScreen
+import com.skeler.scanely.ui.screens.HistoryScreen
+import com.skeler.scanely.ui.screens.SettingsScreen
+import com.skeler.scanely.ui.screens.BarcodeScannerScreen
 import com.skeler.scanely.ui.theme.ThemeMode
 
 
@@ -226,7 +229,7 @@ fun ScanelyNavigation(
         }
         
         composable(Routes.SETTINGS) {
-            com.skeler.scanely.ui.screens.SettingsScreen(
+            SettingsScreen(
                 currentTheme = currentTheme,
                 onThemeChange = onThemeChanged,
                 ocrLanguages = ocrLanguages,
@@ -236,7 +239,7 @@ fun ScanelyNavigation(
         }
         
         composable("history") {
-            com.skeler.scanely.ui.screens.HistoryScreen(
+            HistoryScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onItemClick = { item ->
                     // Re-open result WITHOUT auto-scanning
@@ -281,7 +284,7 @@ fun ScanelyNavigation(
         }
         
         composable(Routes.BARCODE_SCANNER) {
-            com.skeler.scanely.ui.screens.BarcodeScannerScreen(
+            BarcodeScannerScreen(
                 onNavigateBack = { navController.popBackStack() },
                 onBarcodeScanned = { result ->
                     // Save barcode result to history

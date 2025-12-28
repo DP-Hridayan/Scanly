@@ -41,12 +41,12 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
+    onNavigateBack: () -> Unit,
     onItemClick: (HistoryItem) -> Unit
 ) {
     val context = LocalContext.current
     val historyManager = remember { HistoryManager(context) }
     var historyItems by remember { mutableStateOf<List<HistoryItem>>(emptyList()) }
-    val navController = LocalNavController.current
 
     LaunchedEffect(Unit) {
         historyItems = historyManager.getHistory()
@@ -57,7 +57,7 @@ fun HistoryScreen(
             CenterAlignedTopAppBar(
                 title = { Text("History") },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
