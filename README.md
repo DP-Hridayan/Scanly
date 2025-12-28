@@ -1,7 +1,6 @@
 This app was built with fully optimized coding practices using Google Antigravity.
 AI assistance was provided using Claude Opus 4.5 and Gemini 3 Pro.
-AI results improved using the King Prompt from here.
-Scanly
+AI results improved using the King Prompt from [here](https://github.com/aicodeking/yt-tutorial/blob/main/gemini-king-mode.md) to enhance AI resultsScanly
 
 Scanly is a fast, privacy-focused document scanner for Android. It turns your phone into a powerful text extractor and barcode scanner—completely offline.
 
