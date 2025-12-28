@@ -87,8 +87,7 @@ private const val TAG = "CameraScreen"
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun CameraScreen(
-    onImageCaptured: (Uri) -> Unit = {},
-    onNavigateBack: () -> Unit = {}
+    onImageCaptured: (Uri) -> Unit = {}
 ) {
     val context = LocalContext.current
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)

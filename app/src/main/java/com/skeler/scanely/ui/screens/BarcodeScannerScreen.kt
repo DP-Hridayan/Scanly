@@ -1,7 +1,6 @@
 package com.skeler.scanely.ui.screens
 
 import android.Manifest
-import android.graphics.Bitmap
 import android.util.Log
 import android.view.ViewGroup
 import androidx.camera.core.CameraSelector
@@ -52,20 +51,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import com.skeler.scanely.navigation.LocalNavController
 import com.skeler.scanely.scanner.BarcodeResult
 import com.skeler.scanely.scanner.BarcodeScanner
 import kotlinx.coroutines.Dispatchers
@@ -78,34 +76,34 @@ private const val TAG = "BarcodeScannerScreen"
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun BarcodeScannerScreen(
-    onNavigateBack: () -> Unit = {},
     onBarcodeScanned: (BarcodeResult) -> Unit = {}
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
-    
+
     val cameraPermission = rememberPermissionState(Manifest.permission.CAMERA)
-    
+
     var scannedResults by remember { mutableStateOf<List<BarcodeResult>>(emptyList()) }
     var isScanning by remember { mutableStateOf(true) }
-    
+
     // De-duplication set to avoid saving the same barcode continuously
     val previouslyScanned = remember { mutableSetOf<String>() }
-    
+    val navController = LocalNavController.current
+
     LaunchedEffect(Unit) {
         if (!cameraPermission.status.isGranted) {
             cameraPermission.launchPermissionRequest()
         }
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Barcode Scanner") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -134,7 +132,7 @@ fun BarcodeScannerScreen(
                         onBarcodeDetected = { results ->
                             if (results.isNotEmpty() && isScanning) {
                                 scannedResults = results
-                                
+
                                 // Check for new barcodes to save
                                 results.forEach { result ->
                                     val key = "${result.formatName}|${result.rawValue}"
@@ -147,7 +145,7 @@ fun BarcodeScannerScreen(
                             }
                         }
                     )
-                    
+
                     // Scan Frame Overlay
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -163,7 +161,7 @@ fun BarcodeScannerScreen(
                                 )
                         )
                     }
-                    
+
                     // Hint text
                     Box(
                         modifier = Modifier
@@ -184,7 +182,7 @@ fun BarcodeScannerScreen(
                         )
                     }
                 }
-                
+
                 // Results Section
                 AnimatedVisibility(
                     visible = scannedResults.isNotEmpty(),
@@ -241,15 +239,15 @@ private fun CameraPreviewWithScanner(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    
+
     val executor = remember { Executors.newSingleThreadExecutor() }
-    
+
     DisposableEffect(Unit) {
         onDispose {
             executor.shutdown()
         }
     }
-    
+
     AndroidView(
         factory = { ctx ->
             PreviewView(ctx).apply {
@@ -263,14 +261,14 @@ private fun CameraPreviewWithScanner(
         modifier = Modifier.fillMaxSize()
     ) { previewView ->
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        
+
         cameraProviderFuture.addListener({
             val cameraProvider = cameraProviderFuture.get()
-            
+
             val preview = Preview.Builder().build().also {
                 it.surfaceProvider = previewView.surfaceProvider
             }
-            
+
             val imageAnalysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
@@ -281,9 +279,9 @@ private fun CameraPreviewWithScanner(
                         }
                     }
                 }
-            
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-            
+
             try {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(
@@ -306,7 +304,7 @@ private suspend fun processImageProxy(
     try {
         val bitmap = imageProxy.toBitmap()
         val results = BarcodeScanner.scanBitmap(bitmap)
-        
+
         withContext(Dispatchers.Main) {
             onBarcodeDetected(results)
         }
@@ -349,7 +347,7 @@ private fun BarcodeResultCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-            
+
             IconButton(onClick = onCopy) {
                 Icon(
                     imageVector = Icons.Default.ContentCopy,

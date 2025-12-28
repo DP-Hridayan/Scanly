@@ -1,7 +1,6 @@
 package com.skeler.scanely.ui.screens
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,15 +26,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.skeler.scanely.data.HistoryManager
 import com.skeler.scanely.data.HistoryItem
+import com.skeler.scanely.data.HistoryManager
+import com.skeler.scanely.navigation.LocalNavController
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,13 +41,13 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(
-    onNavigateBack: () -> Unit,
     onItemClick: (HistoryItem) -> Unit
 ) {
     val context = LocalContext.current
     val historyManager = remember { HistoryManager(context) }
     var historyItems by remember { mutableStateOf<List<HistoryItem>>(emptyList()) }
-    
+    val navController = LocalNavController.current
+
     LaunchedEffect(Unit) {
         historyItems = historyManager.getHistory()
     }
@@ -59,7 +57,7 @@ fun HistoryScreen(
             CenterAlignedTopAppBar(
                 title = { Text("History") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
+                    IconButton(onClick = { navController.popBackStack() }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
@@ -140,7 +138,11 @@ private fun HistoryItemCard(
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()).format(Date(item.timestamp)),
+                text = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()).format(
+                    Date(
+                        item.timestamp
+                    )
+                ),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
