@@ -15,14 +15,6 @@ Scanly is a fast, privacy-focused document scanner for Android. It turns your ph
 - **Privacy First:** 100% offline. Your data never leaves your device.
 - **Modern Design:** Material 3 interface with Dark Mode & OLED support.
 
-## How to Use
-
-1. **Open the App:** You'll see the home screen with three main options.
-2. **Capture Photo:** Take a picture of a document to extract text immediately.
-3. **From Gallery:** Pick an existing image from your phone to scan.
-4. **Extract PDF:** Select a PDF file to process all its pages at once.
-5. **Scan Barcode:** Switch to the Barcode mode to scan QR codes or product barcodes.
-
 ## Installation
 
 Download the latest `.apk` from the [Releases](https://github.com/Azyrn/Scanly/releases) section and install it on your Android device.
