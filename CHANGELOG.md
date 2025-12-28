@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.1.0] - 2025-12-28
+## [1.2.0] - 2025-12-28
 
 ### Changed
 - **Settings UI**: Refactored Settings from a dialog to a dedicated full-screen experience with smooth transitions.
