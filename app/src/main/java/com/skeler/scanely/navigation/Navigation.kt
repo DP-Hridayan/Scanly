@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
@@ -51,6 +52,7 @@ fun ScanelyNavigation(
     onOcrLanguagesChanged: (Set<String>) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     
     // Shared OCR state
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
@@ -89,7 +91,7 @@ fun ScanelyNavigation(
                 
                 navController.navigate(Routes.RESULTS)
                 
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                scope.launch(kotlinx.coroutines.Dispatchers.IO) {
                     try {
                         // Get Tesseract helper for PDF processing (always use Tesseract for multi-language PDFs)
                         val tesseractHelper = ocrEngine.getTesseractHelper()

@@ -93,45 +93,51 @@ class MlKitOcrHelper(private val context: Context) {
         }
     }
     
+    /**
+     * Perform text recognition from InputImage.
+     * Uses mutex to ensure thread-safety since TextRecognizer is not thread-safe.
+     */
     private suspend fun recognizeFromInputImage(inputImage: InputImage): OcrResult? {
-        return suspendCancellableCoroutine { continuation ->
-            val startTime = System.currentTimeMillis()
-            
-            recognizer?.process(inputImage)
-                ?.addOnSuccessListener { visionText ->
-                    val processingTime = System.currentTimeMillis() - startTime
-                    
-                    val text = visionText.text
-                    
-                    // Calculate confidence from block-level confidence
-                    val confidences = visionText.textBlocks.mapNotNull { block ->
-                        block.lines.flatMap { line ->
-                            line.elements.mapNotNull { it.confidence }
+        return mutex.withLock {
+            suspendCancellableCoroutine { continuation ->
+                val startTime = System.currentTimeMillis()
+                
+                recognizer?.process(inputImage)
+                    ?.addOnSuccessListener { visionText ->
+                        val processingTime = System.currentTimeMillis() - startTime
+                        
+                        val text = visionText.text
+                        
+                        // Calculate confidence from block-level confidence
+                        val confidences = visionText.textBlocks.mapNotNull { block ->
+                            block.lines.flatMap { line ->
+                                line.elements.mapNotNull { it.confidence }
+                            }
+                        }.flatten()
+                        
+                        val avgConfidence = if (confidences.isNotEmpty()) {
+                            (confidences.average() * 100).toInt()
+                        } else {
+                            0
                         }
-                    }.flatten()
-                    
-                    val avgConfidence = if (confidences.isNotEmpty()) {
-                        (confidences.average() * 100).toInt()
-                    } else {
-                        0
-                    }
-                    
-                    Log.d(TAG, "OCR completed in ${processingTime}ms, confidence: $avgConfidence%")
-                    
-                    continuation.resume(
-                        OcrResult(
-                            text = text,
-                            confidence = avgConfidence,
-                            languages = listOf("eng"), // ML Kit Latin
-                            processingTimeMs = processingTime
+                        
+                        Log.d(TAG, "OCR completed in ${processingTime}ms, confidence: $avgConfidence%")
+                        
+                        continuation.resume(
+                            OcrResult(
+                                text = text,
+                                confidence = avgConfidence,
+                                languages = listOf("eng"), // ML Kit Latin
+                                processingTimeMs = processingTime
+                            )
                         )
-                    )
-                }
-                ?.addOnFailureListener { e ->
-                    Log.e(TAG, "ML Kit text recognition failed", e)
-                    continuation.resume(null)
-                }
-                ?: continuation.resume(null)
+                    }
+                    ?.addOnFailureListener { e ->
+                        Log.e(TAG, "ML Kit text recognition failed", e)
+                        continuation.resume(null)
+                    }
+                    ?: continuation.resume(null)
+            }
         }
     }
     
