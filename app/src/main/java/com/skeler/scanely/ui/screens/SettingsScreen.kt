@@ -124,20 +124,24 @@ fun SettingsScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
             
-            OcrQualityOptionRow(
-                label = "Fast (Tesseract)",
-                description = "Faster, supports more languages including Arabic",
-                quality = OcrQuality.FAST,
-                currentQuality = ocrQuality,
-                onSelect = onOcrQualityChanged
-            )
-            OcrQualityOptionRow(
-                label = "Best (ML Kit)",
-                description = "Higher accuracy for Latin text",
-                quality = OcrQuality.BEST,
-                currentQuality = ocrQuality,
-                onSelect = onOcrQualityChanged
-            )
+            OcrQuality.entries.forEach { quality ->
+                val label = when (quality) {
+                    OcrQuality.FAST -> "Fast (Tesseract)"
+                    OcrQuality.BEST -> "Best (ML Kit)"
+                }
+                val description = when (quality) {
+                    OcrQuality.FAST -> "Faster, supports more languages including Arabic"
+                    OcrQuality.BEST -> "Higher accuracy for Latin text"
+                }
+
+                OcrQualityOptionRow(
+                    label = label,
+                    description = description,
+                    quality = quality,
+                    currentQuality = ocrQuality,
+                    onSelect = onOcrQualityChanged
+                )
+            }
             
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
