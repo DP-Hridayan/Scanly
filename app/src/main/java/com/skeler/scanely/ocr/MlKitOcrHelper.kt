@@ -108,12 +108,12 @@ class MlKitOcrHelper(private val context: Context) {
                         
                         val text = visionText.text
                         
-                        // Calculate confidence from block-level confidence
-                        val confidences = visionText.textBlocks.mapNotNull { block ->
+                        // Calculate confidence from element-level confidence scores
+                        val confidences = visionText.textBlocks.flatMap { block ->
                             block.lines.flatMap { line ->
                                 line.elements.mapNotNull { it.confidence }
                             }
-                        }.flatten()
+                        }
                         
                         val avgConfidence = if (confidences.isNotEmpty()) {
                             (confidences.average() * 100).toInt()
