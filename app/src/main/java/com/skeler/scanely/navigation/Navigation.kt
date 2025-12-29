@@ -276,8 +276,7 @@ fun ScanelyNavigation(
                         navController.navigate(Routes.RESULTS) {
                             popUpTo(Routes.HOME)
                         }
-                    },
-                    onNavigateBack = { navController.popBackStack() }
+                    }
                 )
             }
 
