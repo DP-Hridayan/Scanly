@@ -12,6 +12,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -51,6 +54,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -61,12 +65,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.skeler.scanely.R
 import com.skeler.scanely.core.common.LocalSettings
@@ -81,6 +90,10 @@ fun SettingsScreen(
 ) {
     val navController = LocalNavController.current
     var searchQuery by remember { mutableStateOf("") }
+    val topBarScrollBehavior =
+        TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
+    val listState = rememberLazyListState()
+
     val isHighContrastDarkMode = LocalSettings.current.isHighContrastDarkMode
     val ocrLanguages = LocalSettings.current.ocrLanguages
     // Sort and filter languages: Selected first, then alphabetical. Filter by query.
@@ -99,14 +112,30 @@ fun SettingsScreen(
         settingsViewModel.setInt(key = SettingsKeys.THEME_MODE, value = mode)
     }
 
+    val toggleHighContrastDarkMode: () -> Unit = {
+        settingsViewModel.setBoolean(
+            SettingsKeys.HIGH_CONTRAST_DARK_MODE,
+            value = !isHighContrastDarkMode
+        )
+    }
+
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            LargeTopAppBar(
+                scrollBehavior = topBarScrollBehavior,
                 title = {
+                    val collapsedFraction = topBarScrollBehavior.state.collapsedFraction
+                    val expandedFontSize = 33.sp
+                    val collapsedFontSize = 20.sp
+
+                    val fontSize = lerp(expandedFontSize, collapsedFontSize, collapsedFraction)
                     Text(
+                        modifier = Modifier.basicMarquee(),
                         text = "Settings",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
+                        maxLines = 1,
+                        fontSize = fontSize,
+                        fontFamily = FontFamily.SansSerif,
+                        letterSpacing = 0.05.em
                     )
                 },
                 navigationIcon = {
@@ -116,19 +145,17 @@ fun SettingsScreen(
                             contentDescription = "Back"
                         )
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    scrolledContainerColor = MaterialTheme.colorScheme.background
-                )
+                }
             )
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding),
+                .padding(innerPadding)
+                .nestedScroll(topBarScrollBehavior.nestedScrollConnection),
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
 
@@ -165,20 +192,23 @@ fun SettingsScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(vertical = 24.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceContainer)
                             .clickable(
                                 enabled = true,
-                                onClick = {})
+                                onClick = toggleHighContrastDarkMode
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth()
-                                .padding(horizontal = 15.dp, vertical = 10.dp),
+                                .padding(horizontal = 20.dp, vertical = 15.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
@@ -188,28 +218,24 @@ fun SettingsScreen(
                             )
                             Text(
                                 text = "Pure black dark theme for OLED devices",
-                                style = MaterialTheme.typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyMediumEmphasized,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                             )
                         }
 
                         Switch(
+                            modifier = Modifier.padding(end = 15.dp),
                             checked = isHighContrastDarkMode,
-                            onCheckedChange = {
-                                settingsViewModel.setBoolean(
-                                    SettingsKeys.HIGH_CONTRAST_DARK_MODE,
-                                    value = !isHighContrastDarkMode
+                            onCheckedChange = { toggleHighContrastDarkMode() },
+                            thumbContent = {
+                                if (isHighContrastDarkMode) Icon(
+                                    painter = painterResource(R.drawable.ic_check),
+                                    contentDescription = "switch thumb icon",
+                                    modifier = Modifier.size(20.dp)
                                 )
                             })
                     }
                 }
-            }
-
-            item {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                )
             }
 
             // --- Languages Section ---
@@ -468,12 +494,12 @@ private fun LightModeMockup(
                 TextMockup(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 20.dp)
+                        .padding(end = 35.dp)
                 )
                 TextMockup(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 15.dp)
+                        .padding(end = 20.dp)
                 )
             }
 
@@ -524,13 +550,13 @@ private fun DarkModeMockup(
                 TextMockup(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 20.dp),
+                        .padding(end = 35.dp),
                     color = Color.White
                 )
                 TextMockup(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(end = 15.dp),
+                        .padding(end = 20.dp),
                     color = Color.White
                 )
             }
@@ -579,20 +605,20 @@ private fun SystemMockup(
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.Black,
-                        cornerShape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp)
+                        cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
                     )
 
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.Black,
-                        cornerShape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp)
+                        cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
 
                     )
 
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.Black,
-                        cornerShape = RoundedCornerShape(topStart = 5.dp, bottomStart = 5.dp)
+                        cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
                     )
                 }
 
@@ -607,19 +633,19 @@ private fun SystemMockup(
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.White,
-                        cornerShape = RoundedCornerShape(topEnd = 5.dp, bottomEnd = 5.dp)
+                        cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
                     )
 
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.White,
-                        cornerShape = RoundedCornerShape(topEnd = 5.dp, bottomEnd = 5.dp)
+                        cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
                     )
 
                     TextMockup(
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.White,
-                        cornerShape = RoundedCornerShape(topEnd = 5.dp, bottomEnd = 5.dp)
+                        cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
                     )
                 }
             }
@@ -638,11 +664,11 @@ private fun SystemMockup(
 private fun TextMockup(
     modifier: Modifier = Modifier,
     color: Color = Color.Black,
-    cornerShape: RoundedCornerShape = RoundedCornerShape(5.dp)
+    cornerShape: RoundedCornerShape = RoundedCornerShape(4.dp)
 ) {
     Box(
         modifier = modifier
-            .height(10.dp)
+            .height(8.dp)
             .clip(cornerShape)
             .background(color)
     )
@@ -677,11 +703,11 @@ private fun CheckIcon(
         Icon(
             imageVector = Icons.Default.Check,
             contentDescription = "Selected",
-            tint = MaterialTheme.colorScheme.primary,
+            tint = MaterialTheme.colorScheme.onPrimaryContainer,
             modifier = Modifier
                 .size(24.dp)
                 .background(
-                    MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                    MaterialTheme.colorScheme.primaryContainer,
                     CircleShape
                 )
                 .padding(4.dp)

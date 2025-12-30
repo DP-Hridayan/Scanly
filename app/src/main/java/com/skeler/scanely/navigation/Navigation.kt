@@ -1,24 +1,23 @@
 package com.skeler.scanely.navigation
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.skeler.scanely.core.common.LocalSettings
-import com.skeler.scanely.ocr.OcrResult
+import com.skeler.scanely.history.presentation.screen.HistoryScreen
 import com.skeler.scanely.settings.presentation.screen.SettingsScreen
 import com.skeler.scanely.ui.ScanViewModel
 import com.skeler.scanely.ui.screens.BarcodeScannerScreen
 import com.skeler.scanely.ui.screens.CameraScreen
-import com.skeler.scanely.history.presentation.screen.HistoryScreen
 import com.skeler.scanely.ui.screens.HomeScreen
 import com.skeler.scanely.ui.screens.ResultsScreen
 
@@ -34,11 +33,12 @@ object Routes {
 @Composable
 fun ScanelyNavigation(
     navController: NavHostController = rememberNavController(),
-    scanViewModel: ScanViewModel = hiltViewModel()
 ) {
+    val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
+
     val ocrLanguages = LocalSettings.current.ocrLanguages
-
-
 
     LaunchedEffect(Unit, ocrLanguages) {
         scanViewModel.updateLanguages(ocrLanguages)
@@ -86,14 +86,7 @@ fun ScanelyNavigation(
             }
 
             composable(Routes.CAMERA) {
-                CameraScreen(
-                    onImageCaptured = { uri ->
-                        scanViewModel.onImageSelected(uri)
-                        navController.navigate(Routes.RESULTS) {
-                            popUpTo(Routes.HOME)
-                        }
-                    }
-                )
+                CameraScreen()
             }
 
             composable(Routes.RESULTS) {
@@ -101,19 +94,7 @@ fun ScanelyNavigation(
             }
 
             composable(Routes.BARCODE_SCANNER) {
-                BarcodeScannerScreen(
-                    onBarcodeScanned = { barcodeResult ->
-                        // Map BarcodeResult to OcrResult
-                        val ocrResult = OcrResult(
-                            text = barcodeResult.displayValue,
-                            confidence = 100,
-                            languages = listOf("Barcode: ${barcodeResult.formatName}"),
-                            processingTimeMs = 0
-                        )
-                        scanViewModel.onBarcodeScanned(ocrResult)
-                        navController.navigate(Routes.RESULTS)
-                    }
-                )
+                BarcodeScannerScreen()
             }
         }
     }

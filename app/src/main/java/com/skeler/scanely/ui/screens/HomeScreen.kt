@@ -7,6 +7,7 @@ package com.skeler.scanely.ui.screens
  * - Bottom: History Link
  * - Settings: Theme Selection + Developer Info
  */
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -40,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -51,9 +53,10 @@ import com.skeler.scanely.ui.components.GalleryPicker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(
-    scanViewModel: ScanViewModel = hiltViewModel()
-) {
+fun HomeScreen() {
+    val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
     val navController = LocalNavController.current
 
     val launchGalleryPicker = GalleryPicker { uri ->

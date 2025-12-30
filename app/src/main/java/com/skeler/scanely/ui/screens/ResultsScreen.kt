@@ -6,6 +6,7 @@ import android.content.ClipData
 import android.graphics.Bitmap
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -100,13 +101,13 @@ import kotlinx.coroutines.launch
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ResultsScreen(
-    scanViewModel: ScanViewModel = hiltViewModel()
-) {
+fun ResultsScreen() {
+    val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
     val navController = LocalNavController.current
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     val scanState by scanViewModel.uiState.collectAsState()
     val imageUri = scanState.selectedImageUri
@@ -132,11 +133,11 @@ fun ResultsScreen(
     }
 
     val onBack: () -> Unit = {
+        scanViewModel.clearState()
         navController.popBackStack(
             Routes.HOME,
             inclusive = false
         )
-        scanViewModel.clearState()
     }
 
     LaunchedEffect(Unit) {

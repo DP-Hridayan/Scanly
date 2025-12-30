@@ -3,6 +3,7 @@
 package com.skeler.scanely.history.presentation.screen
 
 import android.net.Uri
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
@@ -68,12 +69,11 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HistoryScreen(
-    scanViewModel: ScanViewModel = hiltViewModel()
-) {
+fun HistoryScreen() {
     val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
     val navController = LocalNavController.current
-    val scope = rememberCoroutineScope()
     val historyManager = remember { HistoryManager(context) }
     var historyItems by remember { mutableStateOf<List<HistoryItem>>(emptyList()) }
     val topBarScrollBehavior =

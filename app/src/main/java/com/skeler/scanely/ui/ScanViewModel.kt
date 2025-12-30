@@ -280,13 +280,6 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clear state when leaving results screen or starting new scan.
-     */
-    fun clearState() {
-        currentProcessingJob?.cancel()
-        stateHolder.reset()
-    }
 
     /**
      * Cancel any ongoing processing.
@@ -303,11 +296,19 @@ class ScanViewModel @Inject constructor(
     }
 
     /**
+     * Clear state when leaving results screen or starting new scan.
+     */
+    fun clearState() {
+        cancelProcessing()
+        stateHolder.reset()
+    }
+
+    /**
      * Clean up resources when ViewModel is destroyed.
      */
     override fun onCleared() {
         super.onCleared()
-        currentProcessingJob?.cancel()
+        cancelProcessing()
         ocrEngine.release()
         Log.d(TAG, "ScanViewModel cleared, resources released")
     }
