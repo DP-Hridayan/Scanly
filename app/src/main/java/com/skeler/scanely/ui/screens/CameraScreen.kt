@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import androidx.activity.ComponentActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -55,11 +56,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.skeler.scanely.R
+import com.skeler.scanely.navigation.LocalNavController
+import com.skeler.scanely.navigation.Routes
+import com.skeler.scanely.ui.ScanViewModel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -73,8 +78,11 @@ private const val FLASH_AUTO = 2
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun CameraScreen(onImageCaptured: (Uri) -> Unit = {}) {
+fun CameraScreen(){
     val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
+    val navController = LocalNavController.current
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
     var camera by remember { mutableStateOf<Camera?>(null) }
 
@@ -87,6 +95,24 @@ fun CameraScreen(onImageCaptured: (Uri) -> Unit = {}) {
         FLASH_ON -> painterResource(R.drawable.ic_flash_on)
         FLASH_AUTO -> painterResource(R.drawable.ic_flash_auto)
         else -> null
+    }
+
+    val cycleFlashModes: () -> Unit = {
+        when (flashMode) {
+            FLASH_OFF -> {
+                flashMode = FLASH_ON
+            }
+
+            FLASH_ON -> {
+                flashMode = FLASH_AUTO
+            }
+
+            FLASH_AUTO -> {
+                flashMode = FLASH_OFF
+            }
+
+            else -> {}
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -164,7 +190,10 @@ fun CameraScreen(onImageCaptured: (Uri) -> Unit = {}) {
                                     imageCapture!!,
                                     onImageCaptured = { uri ->
                                         isCapturing = false
-                                        onImageCaptured(uri)
+                                        scanViewModel.onImageSelected(uri)
+                                        navController.navigate(Routes.RESULTS) {
+                                            popUpTo(Routes.HOME)
+                                        }
                                     },
                                     onError = { exc ->
                                         isCapturing = false
@@ -184,23 +213,7 @@ fun CameraScreen(onImageCaptured: (Uri) -> Unit = {}) {
                 ) {
                     flashIcon?.let { icon ->
                         IconButton(
-                            onClick = {
-                                when (flashMode) {
-                                    FLASH_OFF -> {
-                                        flashMode = FLASH_ON
-                                    }
-
-                                    FLASH_ON -> {
-                                        flashMode = FLASH_AUTO
-                                    }
-
-                                    FLASH_AUTO -> {
-                                        flashMode = FLASH_OFF
-                                    }
-
-                                    else -> {}
-                                }
-                            },
+                            onClick = cycleFlashModes,
                             modifier = Modifier.size(48.dp),
                             colors = IconButtonDefaults.iconButtonColors(
                                 containerColor = Color.Black.copy(
@@ -210,6 +223,7 @@ fun CameraScreen(onImageCaptured: (Uri) -> Unit = {}) {
                         ) {
                             Icon(
                                 painter = icon,
+                                tint = Color.White,
                                 contentDescription = "camera flash",
                                 modifier = Modifier.size(32.dp)
                             )

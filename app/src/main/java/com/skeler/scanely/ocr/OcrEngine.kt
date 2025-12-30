@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.util.Log
+import javax.inject.Singleton
 
 private const val TAG = "OcrEngine"
 private const val LANG_ARABIC = "ara"

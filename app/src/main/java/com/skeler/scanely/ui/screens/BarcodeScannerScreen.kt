@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipData
 import android.util.Log
 import android.view.ViewGroup
+import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -61,13 +62,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.skeler.scanely.navigation.LocalNavController
+import com.skeler.scanely.navigation.Routes
+import com.skeler.scanely.ocr.OcrResult
 import com.skeler.scanely.scanner.BarcodeResult
 import com.skeler.scanely.scanner.BarcodeScanner
+import com.skeler.scanely.ui.ScanViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -77,9 +82,10 @@ private const val TAG = "BarcodeScannerScreen"
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
-fun BarcodeScannerScreen(
-    onBarcodeScanned: (BarcodeResult) -> Unit = {}
-) {
+fun BarcodeScannerScreen() {
+    val context = LocalContext.current
+    val activity = context as ComponentActivity
+    val scanViewModel: ScanViewModel = hiltViewModel(activity)
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val navController = LocalNavController.current
@@ -139,7 +145,14 @@ fun BarcodeScannerScreen(
                                     if (!previouslyScanned.contains(key)) {
                                         previouslyScanned.add(key)
                                         // Save to history
-                                        onBarcodeScanned(result)
+                                        val ocrResult = OcrResult(
+                                            text = result.displayValue,
+                                            confidence = 100,
+                                            languages = listOf("Barcode: ${result.formatName}"),
+                                            processingTimeMs = 0
+                                        )
+                                        scanViewModel.onBarcodeScanned(ocrResult)
+                                        navController.navigate(Routes.RESULTS)
                                     }
                                 }
                             }
