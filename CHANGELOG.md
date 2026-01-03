@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0-beta.1] - 2026-01-03
+
+### Added
+- **Smart Actions**: Automatic detection of URLs, emails, phone numbers, and WiFi from both live barcode scans and OCR results with Material 3 action chips.
+- **Enhanced OCR Engine**: Implemented advanced preprocessing pipeline including CLAHE (local contrast), Sauvola (local binarization), and morphological repair for low-quality images.
+- **Scanning Robustness**: Added ML Kit structured data extraction and intelligent frame analysis to improve recognition of difficult barcodes.
+
+### Changed
+- **Scanner UX**: Introduced a 1.5s scan cooldown to prevent redundant triggers and duplicate history entries.
+- **UI Architecture**: Decoupled smart actions into a reusable `ScanActionsRow` component for consistency across screens.
+
+### Fixed
+- **Barcode Formatting**: Fixed an issue where "Copy" in the live scanner didn't always capture the latest result.
+- **Icon Deprecations**: Updated to the latest Material 3 AutoMirrored icons.
+
 ## [1.3.0] - 2025-12-29
 
 ### Added
