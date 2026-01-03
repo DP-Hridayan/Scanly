@@ -86,10 +86,13 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.skeler.scanely.core.actions.ScanAction
+import com.skeler.scanely.core.actions.ScanActionDetector
 import com.skeler.scanely.navigation.LocalNavController
 import com.skeler.scanely.navigation.Routes
 import com.skeler.scanely.ocr.OcrResult
 import com.skeler.scanely.ui.ScanViewModel
+import com.skeler.scanely.ui.components.ScanActionsRow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -482,8 +485,22 @@ private fun ExtractedTextContent(ocrResult: OcrResult) {
         handleColor = MaterialTheme.colorScheme.primary,
         backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
     )
+    
+    // Detect smart actions from OCR text (URLs, emails, phones)
+    val detectedActions = remember(ocrResult.text) {
+        ScanActionDetector.detectActions(
+            text = ocrResult.text,
+            valueType = null // No ML Kit type for OCR text
+        )
+    }
 
     Column {
+        // Smart Actions Row (if any detected)
+        if (detectedActions.isNotEmpty()) {
+            ScanActionsRow(actions = detectedActions)
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+        
         CompositionLocalProvider(
             LocalTextSelectionColors provides customSelectionColors
         ) {

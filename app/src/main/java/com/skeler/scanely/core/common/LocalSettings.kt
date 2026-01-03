@@ -9,6 +9,8 @@ val LocalSettings = compositionLocalOf {
     SettingsState(
         themeMode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
         isHighContrastDarkMode = false,
-        ocrLanguages = OcrHelper.SUPPORTED_LANGUAGES_MAP.keys
+        ocrLanguages = OcrHelper.SUPPORTED_LANGUAGES_MAP.keys,
+        useDynamicColors = true,
+        seedColorIndex = 5 // Default to Color06
     )
 }

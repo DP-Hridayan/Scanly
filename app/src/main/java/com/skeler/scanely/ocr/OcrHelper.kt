@@ -67,6 +67,9 @@ class OcrHelper(private val context: Context) {
         // Minimum confidence threshold to include text
         private const val MIN_CONFIDENCE_THRESHOLD = 30
         
+        // Retry threshold - below this, we attempt a second pass
+        private const val RETRY_CONFIDENCE_THRESHOLD = 25
+        
         // Common garbage characters from OCR noise
         private val GARBAGE_PATTERN = Regex("[|\\[\\]{}\\\\<>^`~©®™•§¶]")
         
@@ -79,6 +82,7 @@ class OcrHelper(private val context: Context) {
     private var tessApi: TessBaseAPI? = null
     private var currentLanguages: List<String> = emptyList()
     private var isInitialized = false
+    private var lastDetectedQuality: ImageQuality = ImageQuality.MEDIUM
     
     /**
      * Initialize Tesseract with specified languages.
@@ -121,16 +125,8 @@ class OcrHelper(private val context: Context) {
                     return@withContext false
                 }
                 
-                // Configure for best accuracy
-                api.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
-                
-                // Tesseract 5.x optimizations
-                try {
-                    api.setVariable("tessedit_pageseg_mode", "1") // Auto with OSD
-                    api.setVariable("textord_heavy_nr", "1") // Enable heavy noise reduction
-                } catch (e: Exception) {
-                    Log.w(TAG, "Could not set Tesseract variables: ${e.message}")
-                }
+                // Apply base configuration
+                configureForQuality(api, ImageQuality.MEDIUM)
                 
                 tessApi = api
                 currentLanguages = languages
@@ -146,8 +142,54 @@ class OcrHelper(private val context: Context) {
     }
     
     /**
+     * Configure Tesseract settings based on detected image quality.
+     * 
+     * For HIGH quality: Fast settings, minimal noise reduction
+     * For MEDIUM quality: Balanced settings
+     * For LOW quality: Aggressive noise reduction, better page segmentation
+     * 
+     * Note: RTL/Arabic support is preserved regardless of quality setting.
+     */
+    private fun configureForQuality(api: TessBaseAPI, quality: ImageQuality) {
+        lastDetectedQuality = quality
+        
+        try {
+            when (quality) {
+                ImageQuality.HIGH -> {
+                    // Clean document - use fast, accurate settings
+                    api.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
+                    api.setVariable("textord_heavy_nr", "0") // Light noise reduction
+                    api.setVariable("tessedit_pageseg_mode", "3") // Auto
+                }
+                
+                ImageQuality.MEDIUM -> {
+                    // Good quality photo - balanced settings
+                    api.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
+                    api.setVariable("textord_heavy_nr", "1") // Moderate noise reduction
+                    api.setVariable("tessedit_pageseg_mode", "1") // Auto with OSD
+                }
+                
+                ImageQuality.LOW -> {
+                    // Poor quality - aggressive processing
+                    api.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO_OSD
+                    api.setVariable("textord_heavy_nr", "1") // Heavy noise reduction
+                    api.setVariable("tessedit_pageseg_mode", "1") // Auto with OSD
+                    api.setVariable("tessedit_do_invert", "1") // Detect inverted text
+                    // Disable dictionary for noisy images to reduce hallucinations
+                    api.setVariable("load_system_dawg", "0")
+                    api.setVariable("load_freq_dawg", "0")
+                }
+            }
+            
+            Log.d(TAG, "Configured Tesseract for $quality quality")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not set Tesseract variables for $quality: ${e.message}")
+        }
+    }
+    
+    /**
      * Recognize text from an image URI.
-     * Applies preprocessing before OCR.
+     * Applies preprocessing before OCR with quality-aware configuration.
      */
     suspend fun recognizeText(imageUri: Uri): OcrResult? = withContext(Dispatchers.IO) {
         if (!isInitialized || tessApi == null) {
@@ -161,7 +203,13 @@ class OcrHelper(private val context: Context) {
             return@withContext null
         }
         
-        val result = recognizeText(preprocessed)
+        // Detect quality and configure Tesseract accordingly
+        val quality = ImagePreprocessor.detectQuality(preprocessed)
+        mutex.withLock {
+            tessApi?.let { configureForQuality(it, quality) }
+        }
+        
+        val result = recognizeTextInternal(preprocessed, quality)
         preprocessed.recycle()
         result
     }
@@ -171,50 +219,98 @@ class OcrHelper(private val context: Context) {
      * The bitmap should already be preprocessed for best results.
      */
     suspend fun recognizeText(bitmap: Bitmap): OcrResult? = withContext(Dispatchers.IO) {
+        if (!isInitialized || tessApi == null) {
+            Log.e(TAG, "OcrHelper not initialized")
+            return@withContext null
+        }
+        
+        // Detect quality and configure Tesseract accordingly
+        val quality = ImagePreprocessor.detectQuality(bitmap)
         mutex.withLock {
-            if (!isInitialized || tessApi == null) {
-                Log.e(TAG, "OcrHelper not initialized")
-                return@withLock null
-            }
-         
-            try {
-                val startTime = System.currentTimeMillis()
+            tessApi?.let { configureForQuality(it, quality) }
+        }
+        
+        recognizeTextInternal(bitmap, quality)
+    }
+    
+    /**
+     * Internal recognition with retry logic for poor results.
+     */
+    private suspend fun recognizeTextInternal(
+        bitmap: Bitmap, 
+        quality: ImageQuality
+    ): OcrResult? = mutex.withLock {
+        if (!isInitialized || tessApi == null) {
+            Log.e(TAG, "OcrHelper not initialized")
+            return@withLock null
+        }
+     
+        try {
+            val startTime = System.currentTimeMillis()
+            
+            tessApi?.setImage(bitmap)
+            
+            var rawText = tessApi?.utF8Text ?: ""
+            var confidence = tessApi?.meanConfidence() ?: 0
+            
+            val firstPassTime = System.currentTimeMillis() - startTime
+            Log.d(TAG, "First pass completed in ${firstPassTime}ms, confidence: $confidence%")
+            
+            // Retry with different settings for very poor results
+            if (confidence < RETRY_CONFIDENCE_THRESHOLD && rawText.length < 20 && quality == ImageQuality.LOW) {
+                Log.d(TAG, "Low confidence ($confidence%), attempting retry with sparse text mode")
                 
-                tessApi?.setImage(bitmap)
-                
-                val rawText = tessApi?.utF8Text ?: ""
-                val confidence = tessApi?.meanConfidence() ?: 0
-                
-                val processingTime = System.currentTimeMillis() - startTime
-                
-                Log.d(TAG, "Raw OCR completed in ${processingTime}ms, confidence: $confidence%")
-                
-                // Skip post-processing if confidence is very low
-                if (confidence < MIN_CONFIDENCE_THRESHOLD && rawText.length < 10) {
-                    Log.w(TAG, "OCR confidence too low ($confidence%), likely garbage")
-                    return@withLock OcrResult(
-                        text = "",
-                        confidence = confidence,
-                        languages = currentLanguages,
-                        processingTimeMs = processingTime
-                    )
+                try {
+                    tessApi?.pageSegMode = TessBaseAPI.PageSegMode.PSM_SPARSE_TEXT
+                    tessApi?.setImage(bitmap)
+                    
+                    val retryText = tessApi?.utF8Text ?: ""
+                    val retryConfidence = tessApi?.meanConfidence() ?: 0
+                    
+                    Log.d(TAG, "Retry completed: confidence=$retryConfidence%, length=${retryText.length}")
+                    
+                    // Use retry result if better
+                    if (retryConfidence > confidence || 
+                        (retryText.length > rawText.length && retryConfidence >= confidence - 5)) {
+                        rawText = retryText
+                        confidence = retryConfidence
+                        Log.d(TAG, "Using retry result")
+                    }
+                    
+                    // Restore original page seg mode
+                    tessApi?.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO_OSD
+                } catch (e: Exception) {
+                    Log.w(TAG, "Retry failed: ${e.message}")
                 }
-                
-                // Post-process the text
-                val cleanedText = postProcess(rawText)
-                
-                Log.d(TAG, "OCR completed. Cleaned text length: ${cleanedText.length}")
-                
-                OcrResult(
-                    text = cleanedText,
+            }
+            
+            val processingTime = System.currentTimeMillis() - startTime
+            
+            // Skip post-processing if confidence is very low
+            if (confidence < MIN_CONFIDENCE_THRESHOLD && rawText.length < 10) {
+                Log.w(TAG, "OCR confidence too low ($confidence%), likely garbage")
+                return@withLock OcrResult(
+                    text = "",
                     confidence = confidence,
                     languages = currentLanguages,
                     processingTimeMs = processingTime
                 )
-            } catch (e: Exception) {
-                Log.e(TAG, "OCR recognition failed", e)
-                null
             }
+            
+            // Post-process the text
+            val cleanedText = postProcess(rawText)
+            
+            Log.d(TAG, "OCR completed. Cleaned text length: ${cleanedText.length}, quality: $quality")
+            
+            OcrResult(
+                text = cleanedText,
+                confidence = confidence,
+                languages = currentLanguages,
+                processingTimeMs = processingTime
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "OCR recognition failed", e)
+            null
         }
     }
     

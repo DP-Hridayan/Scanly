@@ -15,14 +15,29 @@ import kotlin.coroutines.resumeWithException
 private const val TAG = "BarcodeScanner"
 
 /**
- * Barcode data holder
+ * Barcode data holder with structured data from ML Kit.
+ * 
+ * Includes typed fields for common barcode content types:
+ * - URL bookmarks
+ * - WiFi credentials
+ * - Email addresses
+ * - Phone numbers
+ * - SMS messages
+ * - Contact information
  */
 data class BarcodeResult(
     val rawValue: String,
     val displayValue: String,
     val format: Int,
     val formatName: String,
-    val valueType: Int
+    val valueType: Int,
+    // Structured data from ML Kit (nullable)
+    val urlData: Barcode.UrlBookmark? = null,
+    val wifiData: Barcode.WiFi? = null,
+    val emailData: Barcode.Email? = null,
+    val phoneData: Barcode.Phone? = null,
+    val smsData: Barcode.Sms? = null,
+    val contactInfo: Barcode.ContactInfo? = null
 )
 
 /**
@@ -41,6 +56,7 @@ object BarcodeScanner {
     
     /**
      * Scan barcodes from a Bitmap.
+     * Extracts structured data from ML Kit for typed content (URLs, WiFi, etc.)
      */
     suspend fun scanBitmap(bitmap: Bitmap): List<BarcodeResult> = withContext(Dispatchers.IO) {
         suspendCancellableCoroutine { continuation ->
@@ -54,7 +70,14 @@ object BarcodeScanner {
                             displayValue = barcode.displayValue ?: barcode.rawValue ?: "",
                             format = barcode.format,
                             formatName = getFormatName(barcode.format),
-                            valueType = barcode.valueType
+                            valueType = barcode.valueType,
+                            // Extract structured data based on value type
+                            urlData = barcode.url,
+                            wifiData = barcode.wifi,
+                            emailData = barcode.email,
+                            phoneData = barcode.phone,
+                            smsData = barcode.sms,
+                            contactInfo = barcode.contactInfo
                         )
                     }
                     Log.d(TAG, "Scanned ${results.size} barcodes")

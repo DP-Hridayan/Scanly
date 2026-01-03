@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ClipData
 import android.util.Log
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -31,7 +32,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -67,18 +68,24 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
+import com.skeler.scanely.core.actions.ScanAction
+import com.skeler.scanely.core.actions.ScanActionDetector
 import com.skeler.scanely.navigation.LocalNavController
 import com.skeler.scanely.navigation.Routes
 import com.skeler.scanely.ocr.OcrResult
 import com.skeler.scanely.scanner.BarcodeResult
 import com.skeler.scanely.scanner.BarcodeScanner
 import com.skeler.scanely.ui.ScanViewModel
+import com.skeler.scanely.ui.components.ScanActionsRow
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.concurrent.Executors
 
 private const val TAG = "BarcodeScannerScreen"
+
+// Cooldown between scans to prevent duplicates (ms)
+private const val SCAN_COOLDOWN_MS = 1500L
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
@@ -94,6 +101,9 @@ fun BarcodeScannerScreen() {
 
     var scannedResults by remember { mutableStateOf<List<BarcodeResult>>(emptyList()) }
     var isScanning by remember { mutableStateOf(true) }
+    
+    // Track last scan time for cooldown
+    var lastScanTime by remember { mutableLongStateOf(0L) }
 
     // De-duplication set to avoid saving the same barcode continuously
     val previouslyScanned = remember { mutableSetOf<String>() }
@@ -136,8 +146,14 @@ fun BarcodeScannerScreen() {
                 ) {
                     CameraPreviewWithScanner(
                         onBarcodeDetected = { results ->
-                            if (results.isNotEmpty() && isScanning) {
+                            val currentTime = System.currentTimeMillis()
+                            
+                            // Apply cooldown to prevent rapid duplicate scans
+                            if (results.isNotEmpty() && isScanning && 
+                                (currentTime - lastScanTime) > SCAN_COOLDOWN_MS) {
+                                
                                 scannedResults = results
+                                lastScanTime = currentTime
 
                                 // Check for new barcodes to save
                                 results.forEach { result ->
@@ -196,7 +212,7 @@ fun BarcodeScannerScreen() {
                     }
                 }
 
-                // Results Section
+                // Results Section with Smart Actions
                 AnimatedVisibility(
                     visible = scannedResults.isNotEmpty(),
                     enter = fadeIn(),
@@ -209,21 +225,7 @@ fun BarcodeScannerScreen() {
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(scannedResults) { result ->
-                            BarcodeResultCard(
-                                result = result,
-                                onCopy = {
-                                    scope.launch {
-                                        clipboard.setClipEntry(
-                                            ClipEntry(
-                                                ClipData.newPlainText(
-                                                    "copy text",
-                                                    AnnotatedString("Hello from clipboard 👋")
-                                                )
-                                            )
-                                        )
-                                    }
-                                }
-                            )
+                            BarcodeResultCard(result = result)
                         }
                     }
                 }
@@ -291,8 +293,10 @@ private fun CameraPreviewWithScanner(
                 it.surfaceProvider = previewView.surfaceProvider
             }
 
+            // Optimized image analysis for barcode scanning
             val imageAnalysis = ImageAnalysis.Builder()
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetResolution(android.util.Size(1280, 720)) // 720p for balance
                 .build()
                 .also { analysis ->
                     analysis.setAnalyzer(executor) { imageProxy ->
@@ -337,11 +341,28 @@ private suspend fun processImageProxy(
     }
 }
 
+/**
+ * Enhanced BarcodeResultCard with smart action detection.
+ * Displays barcode content and provides actionable buttons based on content type.
+ */
 @Composable
 private fun BarcodeResultCard(
-    result: BarcodeResult,
-    onCopy: () -> Unit
+    result: BarcodeResult
 ) {
+    // Detect actions from barcode content using ML Kit typed data
+    val actions = remember(result) {
+        ScanActionDetector.detectActions(
+            text = result.rawValue,
+            valueType = result.valueType,
+            urlData = result.urlData,
+            wifiData = result.wifiData,
+            emailData = result.emailData,
+            phoneData = result.phoneData,
+            smsData = result.smsData,
+            contactInfo = result.contactInfo
+        )
+    }
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -349,33 +370,33 @@ private fun BarcodeResultCard(
         ),
         shape = MaterialTheme.shapes.medium
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = result.formatName,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = result.displayValue,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
-
-            IconButton(onClick = onCopy) {
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            // Format label
+            Text(
+                text = result.formatName,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            // Content preview
+            Text(
+                text = result.displayValue,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 3
+            )
+            
+            // Smart Actions Row
+            if (actions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                ScanActionsRow(actions = actions)
             }
         }
     }

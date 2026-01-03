@@ -42,14 +42,23 @@ fun ScanelyTheme(
     val darkTheme = LocalDarkMode.current
     val isHighContrastDarkTheme = LocalSettings.current.isHighContrastDarkMode
 
+    val settings = LocalSettings.current
+    val useDynamicColors = settings.useDynamicColors
+    val seedColorIndex = settings.seedColorIndex
+    val seedColor = SeedPalettes.ALL.getOrElse(seedColorIndex) { SeedPalettes.DEFAULT }
+
     val colorScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+        useDynamicColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             if (darkTheme && isHighContrastDarkTheme) highContrastDynamicDarkColorScheme(context)
-            else if (darkTheme) dynamicDarkColorScheme(context)
+            else if (darkTheme) standardDynamicDarkColorScheme(context)
             else dynamicLightColorScheme(context)
         }
-
-        else -> dynamicLightColorScheme(context)
+        
+        else -> schemeFromSeed(
+            seedColor = seedColor,
+            dark = darkTheme,
+            isHighContrast = darkTheme && isHighContrastDarkTheme
+        )
     }
 
     val view = LocalView.current

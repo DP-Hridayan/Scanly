@@ -10,6 +10,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -33,9 +35,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ColorLens
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -97,16 +103,7 @@ fun SettingsScreen(
         }
     }
 
-    val onThemeChange: (mode: Int) -> Unit = { mode ->
-        settingsViewModel.setInt(key = SettingsKeys.THEME_MODE, value = mode)
-    }
 
-    val toggleHighContrastDarkMode: () -> Unit = {
-        settingsViewModel.setBoolean(
-            SettingsKeys.HIGH_CONTRAST_DARK_MODE,
-            value = !isHighContrastDarkMode
-        )
-    }
 
     Scaffold(
         topBar = {
@@ -148,7 +145,7 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
 
-            // --- Appearance Section ---
+            // --- Look & Feel Section ---
             item {
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -161,68 +158,39 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ThemeSelectionCard(
-                            mode = AppCompatDelegate.MODE_NIGHT_NO,
-                            onSelect = onThemeChange,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeSelectionCard(
-                            mode = AppCompatDelegate.MODE_NIGHT_YES,
-                            onSelect = onThemeChange,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ThemeSelectionCard(
-                            mode = AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
-                            onSelect = onThemeChange,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 24.dp)
                             .clip(RoundedCornerShape(16.dp))
                             .background(MaterialTheme.colorScheme.surfaceContainer)
-                            .clickable(
-                                enabled = true,
-                                onClick = toggleHighContrastDarkMode
-                            ),
+                            .clickable { navController.navigate(com.skeler.scanely.navigation.Routes.LOOK_AND_FEEL) }
+                            .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 15.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        Icon(
+                            imageVector = Icons.Default.ColorLens, // Use ColorLens or Palette
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "High Contrast Dark Theme",
-                                style = MaterialTheme.typography.titleMediumEmphasized,
-                                fontWeight = FontWeight.Bold
+                                text = "Look & Feel",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Pure black dark theme for OLED devices",
-                                style = MaterialTheme.typography.bodyMediumEmphasized,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
+                                text = "Dynamic colors, Dark theme, Language", // Updated description
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-
-                        Switch(
-                            modifier = Modifier.padding(end = 15.dp),
-                            checked = isHighContrastDarkMode,
-                            onCheckedChange = { toggleHighContrastDarkMode() },
-                            thumbContent = {
-                                if (isHighContrastDarkMode) Icon(
-                                    painter = painterResource(R.drawable.ic_check),
-                                    contentDescription = "switch thumb icon",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            })
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Navigate",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -278,60 +246,6 @@ fun SettingsScreen(
     }
 }
 
-@Composable
-private fun ThemeSelectionCard(
-    mode: Int,
-    onSelect: (mode: Int) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val currentTheme = LocalSettings.current.themeMode
-    val isSelected = mode == currentTheme
-
-    Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            when (mode) {
-                AppCompatDelegate.MODE_NIGHT_NO -> LightModeMockup(
-                    onSelect = onSelect,
-                    isSelected = isSelected
-                )
-
-                AppCompatDelegate.MODE_NIGHT_YES -> DarkModeMockup(
-                    onSelect = onSelect,
-                    isSelected = isSelected
-                )
-
-                AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM -> SystemMockup(
-                    onSelect = onSelect,
-                    isSelected = isSelected
-                )
-            }
-
-            CheckIcon(
-                isSelected = isSelected,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 20.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = when (mode) {
-                AppCompatDelegate.MODE_NIGHT_NO -> "Light"
-                AppCompatDelegate.MODE_NIGHT_YES -> "Dark"
-                AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM -> "System"
-                else -> ""
-            },
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-        )
-    }
-}
 
 @Composable
 private fun LanguageCheckboxRow(
@@ -369,300 +283,235 @@ private fun LanguageCheckboxRow(
 private fun AboutSection() {
     val uriHandler = LocalUriHandler.current
 
+    val contributors = remember {
+        listOf(
+            Contributor(
+                username = "Azyrn",
+                displayName = "Azyrn",
+                role = "Developer"
+            ),
+            Contributor(
+                username = "DP-Hridayan",
+                displayName = "DP-Hridayan",
+                role = "Contributor"
+            )
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(vertical = 12.dp, horizontal = 24.dp), // Matched horizontal padding
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
-        // App Icon & Version
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_document_scanner),
-                contentDescription = "Scanly",
-                modifier = Modifier.size(28.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.size(12.dp))
-            Column {
+        // Source Code Section
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+             Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                 Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = null, // decorative
+                    modifier = Modifier.size(24.dp), 
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                 // Note: If ic_code doesn't exist, I'll use a standard icon from Icons object in the next step or fallback. 
+                 // For now, I'll use Icons.Default.Code if available or a similar one. 
+                 // Actually, let's use a standard icon to be safe.
+             }
+             // Wait, the design shows "Source Code" as a header? Or just the card?
+             // The image shows "Source Code" text inside the card or above?
+             // Image: 
+             // < > Source Code
+             //     https://github.com...
+             
+             SourceCodeCard(
+                 onClick = { uriHandler.openUri("https://github.com/Azyrn/Scanly") }
+             )
+        }
+
+        // Contributors Section
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Text(
-                    text = "Scanly",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "Contributors",
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = contributors.size.toString(),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            contributors.forEach { contributor ->
+                ContributorCard(
+                    contributor = contributor,
+                    onClick = { uriHandler.openUri(contributor.githubUrl) }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(24.dp))
+        
+        // App Version Footer
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Scanly v1.3.0",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        }
+    }
+}
+
+data class Contributor(
+    val username: String,
+    val displayName: String,
+    val role: String,
+    val githubUrl: String = "https://github.com/$username",
+    val avatarUrl: String = "https://github.com/$username.png"
+)
+
+@Composable
+private fun SourceCodeCard(onClick: () -> Unit) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.background),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Code,
+                    contentDescription = "Source Code",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Source Code",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "v1.3.0",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "https://github.com/Azyrn/Scanly",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
+            
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = "Open Link",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Developer Info
-        Text(
-            text = "Developed by Azyrn Skeler",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // GitHub Link Row
+@Composable
+private fun ContributorCard(
+    contributor: Contributor,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainer
+        ),
+        elevation = CardDefaults.cardElevation(0.dp)
+    ) {
         Row(
             modifier = Modifier
-                .clip(MaterialTheme.shapes.small)
-                .clickable {
-                    uriHandler.openUri("https://github.com/Azyrn/Scanly")
-                }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+                .padding(16.dp)
+                .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                painter = painterResource(id = R.drawable.ic_github),
-                contentDescription = "GitHub",
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.size(8.dp))
-            Text(
-                text = "View on GitHub",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-    }
-}
-
-@Composable
-private fun LightModeMockup(
-    modifier: Modifier = Modifier,
-    isSelected: Boolean,
-    onSelect: (Int) -> Unit
-) {
-    Card(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) {
-                onSelect(AppCompatDelegate.MODE_NIGHT_NO)
-            },
-        shape = RoundedCornerShape(16.dp),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            TextMockup(
+            // Avatar
+            AsyncImage(
+                model = contributor.avatarUrl,
+                contentDescription = "Avatar of ${contributor.displayName}",
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 10.dp)
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentScale = ContentScale.Crop
             )
-
-            TextMockup(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 35.dp)
-            )
-            TextMockup(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 20.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun DarkModeMockup(
-    modifier: Modifier = Modifier,
-    isSelected: Boolean,
-    onSelect: (Int) -> Unit
-) {
-    Card(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clickable(
-                enabled = true,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = { onSelect(AppCompatDelegate.MODE_NIGHT_YES) }),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.95f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 4.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            TextMockup(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 10.dp),
-                color = Color.White
-            )
-
-            TextMockup(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 35.dp),
-                color = Color.White
-            )
-            TextMockup(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(end = 20.dp),
-                color = Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun SystemMockup(
-    modifier: Modifier = Modifier,
-    isSelected: Boolean,
-    onSelect: (Int) -> Unit
-) {
-    Card(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clickable(
-                enabled = true,
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() },
-                onClick = { onSelect(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM) }),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
-                    .background(Color.White)
-                    .padding(start = 10.dp, top = 20.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.Black,
-                    cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = contributor.displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
-
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.Black,
-                    cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
-
+                Text(
+                    text = "@${contributor.username}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary
                 )
-
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.Black,
-                    cornerShape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
-                )
+                if (contributor.role.isNotEmpty()) {
+                    Text(
+                        text = contributor.role,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxSize()
-                    .background(Color.Black)
-                    .padding(end = 10.dp, top = 20.dp, bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.White,
-                    cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
-                )
-
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.White,
-                    cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
-                )
-
-                TextMockup(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = Color.White,
-                    cornerShape = RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)
-                )
-            }
+            
+             Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward, // generic open icon
+                contentDescription = "Open Profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp)
+            )
         }
-    }
-}
-
-@Composable
-private fun TextMockup(
-    modifier: Modifier = Modifier,
-    color: Color = Color.Black,
-    cornerShape: RoundedCornerShape = RoundedCornerShape(4.dp)
-) {
-    Box(
-        modifier = modifier
-            .height(8.dp)
-            .clip(cornerShape)
-            .background(color)
-    )
-}
-
-@Composable
-private fun CheckIcon(
-    modifier: Modifier = Modifier,
-    isSelected: Boolean
-) {
-    AnimatedVisibility(
-        visible = isSelected,
-        modifier = modifier,
-        enter = scaleIn(
-            initialScale = 0.6f, animationSpec = tween<Float>(
-                durationMillis = 180,
-                easing = FastOutSlowInEasing
-            )
-        ) + fadeIn(
-            animationSpec = tween(120)
-        ),
-        exit = scaleOut(
-            targetScale = 0.6f,
-            animationSpec = tween(
-                durationMillis = 150,
-                easing = FastOutSlowInEasing
-            )
-        ) + fadeOut(
-            animationSpec = tween(100)
-        )
-    ) {
-        Icon(
-            imageVector = Icons.Default.Check,
-            contentDescription = "Selected",
-            tint = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier
-                .size(24.dp)
-                .background(
-                    MaterialTheme.colorScheme.primaryContainer,
-                    CircleShape
-                )
-                .padding(4.dp)
-        )
     }
 }

@@ -14,6 +14,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.skeler.scanely.core.common.LocalSettings
 import com.skeler.scanely.history.presentation.screen.HistoryScreen
+import com.skeler.scanely.settings.presentation.screen.LookAndFeelScreen
 import com.skeler.scanely.settings.presentation.screen.SettingsScreen
 import com.skeler.scanely.ui.ScanViewModel
 import com.skeler.scanely.ui.screens.BarcodeScannerScreen
@@ -27,6 +28,7 @@ object Routes {
     const val RESULTS = "results"
     const val BARCODE_SCANNER = "barcode_scanner"
     const val SETTINGS = "settings"
+    const val LOOK_AND_FEEL = "look_and_feel"
     const val HISTORY = "history"
 }
 
@@ -79,6 +81,10 @@ fun ScanelyNavigation(
 
             composable(Routes.SETTINGS) {
                 SettingsScreen()
+            }
+
+            composable(Routes.LOOK_AND_FEEL) {
+                LookAndFeelScreen()
             }
 
             composable(Routes.HISTORY) {

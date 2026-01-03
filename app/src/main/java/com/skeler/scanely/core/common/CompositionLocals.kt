@@ -26,17 +26,23 @@ fun CompositionLocals(
     val themeMode by settingsViewModel.intState(SettingsKeys.THEME_MODE)
     val isHighContrastDarkMode by settingsViewModel.booleanState(SettingsKeys.HIGH_CONTRAST_DARK_MODE)
     val ocrLanguages by settingsViewModel.stringSetState(SettingsKeys.OCR_LANGUAGES)
+    val useDynamicColors by settingsViewModel.booleanState(SettingsKeys.USE_DYNAMIC_COLORS)
+    val seedColorIndex by settingsViewModel.intState(SettingsKeys.SEED_COLOR_INDEX)
 
     val state =
         remember(
             themeMode,
             isHighContrastDarkMode,
-            ocrLanguages
+            ocrLanguages,
+            useDynamicColors,
+            seedColorIndex
         ) {
             SettingsState(
                 themeMode = themeMode,
                 isHighContrastDarkMode = isHighContrastDarkMode,
-                ocrLanguages = ocrLanguages
+                ocrLanguages = ocrLanguages,
+                useDynamicColors = useDynamicColors,
+                seedColorIndex = seedColorIndex
             )
         }
 
