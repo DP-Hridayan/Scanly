@@ -75,7 +75,7 @@ fun LookAndFeelScreen(
     val settings = LocalSettings.current
     val useDynamicColors = settings.useDynamicColors
     val seedColorIndex = settings.seedColorIndex
-    val isDarkTheme = settings.themeMode == AppCompatDelegate.MODE_NIGHT_YES
+    val isDarkTheme = settings.themeMode != AppCompatDelegate.MODE_NIGHT_NO
     val isOledMode = settings.isOledModeEnabled
 
     Scaffold(
@@ -167,7 +167,7 @@ fun LookAndFeelScreen(
 
             // Dark Theme Toggle
             item {
-                val isDark = settings.themeMode == AppCompatDelegate.MODE_NIGHT_YES
+                val isDark = settings.themeMode != AppCompatDelegate.MODE_NIGHT_NO
                 SettingSwitchTile(
                     title = "Dark theme",
                     subtitle = if (isDark) "On" else "Off",

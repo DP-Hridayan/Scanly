@@ -60,7 +60,9 @@ import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -95,6 +97,9 @@ fun SettingsScreen(
 
     val isOledModeEnabled = LocalSettings.current.isOledModeEnabled
     val ocrLanguages = LocalSettings.current.ocrLanguages
+    
+    // Guard to prevent double-tap during exit animation
+    var navigatingBack by remember { mutableStateOf(false) }
 
     val languageList by remember {
         derivedStateOf {
@@ -125,7 +130,12 @@ fun SettingsScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = {
+                        if (!navigatingBack) {
+                            navigatingBack = true
+                            navController.popBackStack()
+                        }
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"

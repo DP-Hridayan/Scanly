@@ -1,8 +1,6 @@
 package com.skeler.scanely.navigation
 
 import androidx.activity.ComponentActivity
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +10,10 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.skeler.scanely.core.animation.galleryPopEnter
+import com.skeler.scanely.core.animation.galleryPopExit
+import com.skeler.scanely.core.animation.gallerySlideEnter
+import com.skeler.scanely.core.animation.gallerySlideExit
 import com.skeler.scanely.core.common.LocalSettings
 import com.skeler.scanely.history.presentation.screen.HistoryScreen
 import com.skeler.scanely.settings.presentation.screen.LookAndFeelScreen
@@ -50,30 +52,11 @@ fun ScanelyNavigation(
         NavHost(
             navController = navController,
             startDestination = Routes.HOME,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(300)
-                )
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(300)
-                )
-            }
+            // Google Gallery-style transitions: EaseOutExpo 500ms with asymmetric timing
+            enterTransition = { gallerySlideEnter() },
+            exitTransition = { gallerySlideExit() },
+            popEnterTransition = { galleryPopEnter() },
+            popExitTransition = { galleryPopExit() }
         ) {
             composable(Routes.HOME) {
                 HomeScreen()

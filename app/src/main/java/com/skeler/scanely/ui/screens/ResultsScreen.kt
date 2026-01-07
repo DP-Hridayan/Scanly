@@ -93,6 +93,7 @@ import com.skeler.scanely.navigation.Routes
 import com.skeler.scanely.ocr.OcrResult
 import com.skeler.scanely.ui.ScanViewModel
 import com.skeler.scanely.ui.components.ScanActionsRow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -121,6 +122,7 @@ fun ResultsScreen() {
 
     var showContent by remember { mutableStateOf(false) }
     var showFullImage by remember { mutableStateOf(false) }
+    var navigatingUp by remember { mutableStateOf(false) }
 
     val topBarScrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -135,12 +137,20 @@ fun ResultsScreen() {
         }
     }
 
+    // Gallery-aligned back navigation pattern:
+    // 1. Set guard flag synchronously
+    // 2. Navigate immediately
+    // 3. Defer cleanup until after exit animation completes
     val onBack: () -> Unit = {
-        scanViewModel.clearState()
-        navController.popBackStack(
-            Routes.HOME,
-            inclusive = false
-        )
+        if (!navigatingUp) {
+            navigatingUp = true
+            navController.popBackStack(Routes.HOME, inclusive = false)
+            // Defer state cleanup until after exit animation (600ms)
+            scope.launch(Dispatchers.Default) {
+                delay(600)
+                scanViewModel.clearState()
+            }
+        }
     }
 
     LaunchedEffect(Unit) {

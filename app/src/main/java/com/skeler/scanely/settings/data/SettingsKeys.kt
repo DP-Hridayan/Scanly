@@ -5,7 +5,7 @@ import com.skeler.scanely.ocr.OcrHelper.Companion.SUPPORTED_LANGUAGES_MAP
 
 
 enum class SettingsKeys(val default: Any?) {
-    THEME_MODE(AppCompatDelegate.MODE_NIGHT_YES),
+    THEME_MODE(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM),
     IS_OLED_MODE_ENABLED(false),
     OCR_LANGUAGES(SUPPORTED_LANGUAGES_MAP.keys),
     USE_DYNAMIC_COLORS(true),
