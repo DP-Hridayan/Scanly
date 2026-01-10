@@ -172,7 +172,10 @@ fun HistoryScreen() {
                     HistoryItemCard(
                         item = item,
                         onClick = {
+                            // Navigate to results with saved text (no re-extraction)
                             scanViewModel.onImageSelected(Uri.parse(item.imageUri))
+                            // Pass saved text via navigation args or shared state
+                            scanViewModel.setHistoryText(item.text)
                             navController.navigate(Routes.RESULTS)
                         },
                         modifier = Modifier

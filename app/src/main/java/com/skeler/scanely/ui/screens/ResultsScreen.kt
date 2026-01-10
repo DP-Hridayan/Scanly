@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -35,17 +36,24 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -83,16 +91,19 @@ import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.skeler.scanely.core.actions.ScanAction
 import com.skeler.scanely.core.actions.ScanActionDetector
+import com.skeler.scanely.core.ai.AiResult
+import com.skeler.scanely.core.ocr.OcrResult
 import com.skeler.scanely.navigation.LocalNavController
 import com.skeler.scanely.navigation.Routes
-import com.skeler.scanely.ocr.OcrResult
 import com.skeler.scanely.ui.ScanViewModel
-import com.skeler.scanely.ui.components.ScanActionsRow
+import com.skeler.scanely.ui.components.RateLimitSheet
+import com.skeler.scanely.ui.viewmodel.AiScanViewModel
+import com.skeler.scanely.ui.viewmodel.OcrViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,6 +113,7 @@ import kotlinx.coroutines.launch
  * - Selectable Text Container
  * - Copied to Clipboard toast
  * - Source image quick view + full screen expand
+ * - AI Results with Translate button
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,20 +121,60 @@ fun ResultsScreen() {
     val context = LocalContext.current
     val activity = context as ComponentActivity
     val scanViewModel: ScanViewModel = hiltViewModel(activity)
+    val aiViewModel: AiScanViewModel = hiltViewModel(activity)
+    val ocrViewModel: OcrViewModel = hiltViewModel(activity)
     val navController = LocalNavController.current
-    val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
 
     val scanState by scanViewModel.uiState.collectAsState()
+    val aiState by aiViewModel.aiState.collectAsState()
+    val ocrState by ocrViewModel.uiState.collectAsState()
+    
     val imageUri = scanState.selectedImageUri
-    val ocrResult = scanState.ocrResult
-    val isProcessing = scanState.isProcessing
+    val isProcessing = scanState.isProcessing || aiState.isProcessing || ocrState.isProcessing
     val pdfThumbnail = scanState.pdfThumbnail
     val progressMessage = scanState.progressMessage
+    
+    // History text (restored from history - highest priority, no re-extraction)
+    val historyText = scanState.historyText
+
+    // AI result text
+    val aiResultText = when (val result = aiState.result) {
+        is AiResult.Success -> result.text
+        is AiResult.Error -> "Error: ${result.message}"
+        is AiResult.RateLimited -> "Rate limited. Wait ${result.remainingMs / 1000}s"
+        null -> null
+    }
+    
+    // OCR result text (on-device ML Kit) - FREE, UNLIMITED
+    val ocrResultText = when (val result = ocrState.result) {
+        is OcrResult.Success -> result.text
+        is OcrResult.Error -> null
+        is OcrResult.Empty -> null
+        null -> null
+    }
+    
+    // Priority: History > AI > OCR
+    val primaryResultText = historyText ?: aiResultText ?: ocrResultText
+    
+    // Track if result is from AI (only AI results can be translated)
+    val isAiResult = aiResultText != null
+    
+    // Display translated text if available, otherwise original
+    val displayText = aiState.translatedText ?: primaryResultText
+    val hasTranslation = aiState.translatedText != null
+    val isTranslating = aiState.isTranslating
+
+    // Network & Rate Limit State
+    val isOnline by scanViewModel.isOnline.collectAsState()
+    val rateLimitState by scanViewModel.rateLimitState.collectAsState()
+    val showRateLimitSheet by scanViewModel.showRateLimitSheet.collectAsState()
+    val cooldownSeconds = rateLimitState.remainingSeconds
 
     var showContent by remember { mutableStateOf(false) }
     var showFullImage by remember { mutableStateOf(false) }
     var navigatingUp by remember { mutableStateOf(false) }
+    var showLanguageMenu by remember { mutableStateOf(false) }
 
     val topBarScrollBehavior =
         TopAppBarDefaults.exitUntilCollapsedScrollBehavior(rememberTopAppBarState())
@@ -137,18 +189,22 @@ fun ResultsScreen() {
         }
     }
 
-    // Gallery-aligned back navigation pattern:
-    // 1. Set guard flag synchronously
-    // 2. Navigate immediately
-    // 3. Defer cleanup until after exit animation completes
+    // Translation languages
+    val languages = listOf(
+        "English", "Spanish", "French", "German", "Italian", 
+        "Portuguese", "Russian", "Chinese", "Japanese", "Korean",
+        "Arabic", "Hindi", "Turkish", "Dutch", "Polish"
+    )
+
     val onBack: () -> Unit = {
         if (!navigatingUp) {
             navigatingUp = true
             navController.popBackStack(Routes.HOME, inclusive = false)
-            // Defer state cleanup until after exit animation (600ms)
             scope.launch(Dispatchers.Default) {
                 delay(600)
                 scanViewModel.clearState()
+                aiViewModel.clearResult()
+                ocrViewModel.clearResult()
             }
         }
     }
@@ -165,6 +221,14 @@ fun ResultsScreen() {
             imageUri = imageUri,
             pdfThumbnail = pdfThumbnail,
             onDismiss = { showFullImage = false }
+        )
+    }
+
+    // Rate Limit Sheet Modal
+    if (showRateLimitSheet) {
+        RateLimitSheet(
+            remainingSeconds = cooldownSeconds,
+            onDismiss = { scanViewModel.dismissRateLimitSheet() }
         )
     }
 
@@ -198,33 +262,22 @@ fun ResultsScreen() {
             )
         },
         floatingActionButton = {
-            if (!isProcessing && ocrResult != null && ocrResult.text.isNotEmpty()) {
+            if (displayText != null && !isProcessing && !isTranslating) {
                 ExtendedFloatingActionButton(
-                    modifier = Modifier.padding(bottom = 10.dp),
+                    onClick = {
+                        val clipboardManager = context.getSystemService(android.content.ClipboardManager::class.java)
+                        val clipData = ClipData.newPlainText("AI Result", displayText)
+                        clipboardManager.setPrimaryClip(clipData)
+                        Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
+                    },
                     expanded = isFabExpanded,
                     icon = {
                         Icon(
                             imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy"
+                            contentDescription = null
                         )
                     },
-                    text = {
-                        Text("Copy")
-                    },
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(
-                                ClipEntry(
-                                    ClipData.newPlainText(
-                                        "OCR result",
-                                        AnnotatedString(ocrResult.text)
-                                    )
-                                )
-                            )
-                            Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT)
-                                .show()
-                        }
-                    }
+                    text = { Text("Copy") }
                 )
             }
         },
@@ -239,10 +292,9 @@ fun ResultsScreen() {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // Spacer to avoid top bar overlap content if initially hidden
             item { Spacer(modifier = Modifier.height(8.dp)) }
 
-            // Image Preview Card (Top, smaller, tappable)
+            // Image Preview Card
             item {
                 AnimatedVisibility(
                     visible = showContent && (imageUri != null || pdfThumbnail != null),
@@ -256,27 +308,194 @@ fun ResultsScreen() {
                 }
             }
 
-            // Results Card
+            // Results Card with AI/OCR Content
             item {
                 AnimatedVisibility(
                     visible = showContent,
-                    enter = fadeIn(
-                        tween(
-                            400,
-                            delayMillis = 150
-                        )
-                    ) + slideInVertically(initialOffsetY = { it / 4 })
+                    enter = fadeIn(tween(400, delayMillis = 150)) + slideInVertically(initialOffsetY = { it / 4 })
                 ) {
-                    ResultsCard(
-                        ocrResult = ocrResult,
+                    // Determine the processing message
+                    val processingMessage = when {
+                        aiState.isProcessing -> "AI analyzing image..."
+                        ocrState.isProcessing -> if (ocrState.isPdf) "Extracting PDF text..." else "Extracting text..."
+                        else -> progressMessage
+                    }
+                    
+                    AiResultsCard(
                         isProcessing = isProcessing,
-                        progressMessage = progressMessage
+                        isTranslating = isTranslating,
+                        progressMessage = processingMessage,
+                        resultText = displayText,
+                        hasTranslation = hasTranslation,
+                        canTranslate = isAiResult && isOnline, // Only AI results + online
+                        onTranslateClick = { showLanguageMenu = true },
+                        onRevertClick = { aiViewModel.clearTranslation() },
+                        showLanguageMenu = showLanguageMenu,
+                        onLanguageMenuDismiss = { showLanguageMenu = false },
+                        languages = languages,
+                        onLanguageSelected = { language ->
+                            showLanguageMenu = false
+                            // Rate limit check before translation
+                            scanViewModel.triggerAiWithRateLimit {
+                                aiViewModel.translateResult(language)
+                            }
+                        }
                     )
                 }
             }
 
             item { Spacer(modifier = Modifier.height(80.dp)) }
         }
+    }
+}
+
+@Composable
+private fun AiResultsCard(
+    isProcessing: Boolean,
+    isTranslating: Boolean,
+    progressMessage: String,
+    resultText: String?,
+    hasTranslation: Boolean,
+    canTranslate: Boolean, // true = AI result + online
+    onTranslateClick: () -> Unit,
+    onRevertClick: () -> Unit,
+    showLanguageMenu: Boolean,
+    onLanguageMenuDismiss: () -> Unit,
+    languages: List<String>,
+    onLanguageSelected: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+        ),
+        shape = MaterialTheme.shapes.extraLarge
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp)
+        ) {
+            // Header with Translate/Revert buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (hasTranslation) "Translated Text" else "Result",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+
+                if (resultText != null && !isProcessing && !isTranslating) {
+                    Row {
+                        if (hasTranslation) {
+                            // Revert to original button
+                            OutlinedButton(
+                                onClick = onRevertClick,
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Undo,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Original", style = MaterialTheme.typography.labelMedium)
+                            }
+                        } else if (canTranslate) {
+                            // Translate button - only for AI results when online
+                            Box {
+                                FilledTonalButton(
+                                    onClick = onTranslateClick,
+                                    modifier = Modifier.height(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Translate,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Translate",
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = showLanguageMenu,
+                                    onDismissRequest = onLanguageMenuDismiss
+                                ) {
+                                    languages.forEach { language ->
+                                        DropdownMenuItem(
+                                            text = { Text(language) },
+                                            onClick = { onLanguageSelected(language) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        // else: offline - button is completely hidden
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            when {
+                isProcessing -> {
+                    ProcessingContent(progressMessage)
+                }
+                isTranslating -> {
+                    TranslatingContent()
+                }
+                resultText != null -> {
+                    AiTextContent(text = resultText)
+                }
+                else -> {
+                    EmptyResultContent()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiTextContent(text: String) {
+    val customSelectionColors = TextSelectionColors(
+        handleColor = MaterialTheme.colorScheme.primary,
+        backgroundColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+    )
+
+    CompositionLocalProvider(LocalTextSelectionColors provides customSelectionColors) {
+        SelectionContainer {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    lineHeight = 28.sp,
+                    textDirection = TextDirection.Content
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+private fun TranslatingContent() {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        CircularProgressIndicator(modifier = Modifier.size(48.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "Translating...",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -289,7 +508,7 @@ private fun ImagePreviewCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp) // Fixed height to save space (~30-40% reduction)
+            .height(200.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
@@ -299,7 +518,6 @@ private fun ImagePreviewCard(
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             when {
-                // Show PDF thumbnail if available
                 pdfThumbnail != null -> {
                     Image(
                         bitmap = pdfThumbnail.asImageBitmap(),
@@ -307,11 +525,10 @@ private fun ImagePreviewCard(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(MaterialTheme.shapes.large),
-                        contentScale = ContentScale.Crop, // Fill the card area
+                        contentScale = ContentScale.Crop,
                         alpha = 0.9f
                     )
                 }
-                // Show image via Coil
                 imageUri != null -> {
                     AsyncImage(
                         model = ImageRequest.Builder(LocalContext.current)
@@ -322,13 +539,12 @@ private fun ImagePreviewCard(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(MaterialTheme.shapes.large),
-                        contentScale = ContentScale.Crop, // Fill the card area
+                        contentScale = ContentScale.Crop,
                         alpha = 0.9f
                     )
                 }
             }
 
-            // "Tap to expand" hint overlay
             Surface(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
@@ -363,9 +579,8 @@ private fun FullImageDialog(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { onDismiss() } // Tap anywhere to dismiss
+                .clickable { onDismiss() }
         ) {
-            // Close button
             FilledIconButton(
                 onClick = onDismiss,
                 modifier = Modifier
@@ -378,7 +593,6 @@ private fun FullImageDialog(
                 )
             }
 
-            // Full image
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -412,56 +626,6 @@ private fun FullImageDialog(
 }
 
 @Composable
-private fun ResultsCard(
-    ocrResult: OcrResult?,
-    isProcessing: Boolean,
-    progressMessage: String
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-        ),
-        shape = MaterialTheme.shapes.extraLarge
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp) // Generous padding for readability
-        ) {
-            if (!isProcessing) {
-                Text(
-                    text = "Extracted Text",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            when {
-                isProcessing -> {
-                    ProcessingContent(progressMessage)
-                }
-
-                ocrResult != null && ocrResult.text.isNotEmpty() -> {
-                    ExtractedTextContent(ocrResult = ocrResult)
-                }
-
-                ocrResult != null && ocrResult.text.isEmpty() -> {
-                    EmptyResultContent()
-                }
-
-                else -> {
-                    WaitingContent()
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun ProcessingContent(progressMessage: String) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -470,7 +634,7 @@ private fun ProcessingContent(progressMessage: String) {
         CircularWavyProgressIndicator(modifier = Modifier.size(48.dp))
         Spacer(modifier = Modifier.height(24.dp))
         Text(
-            text = progressMessage.ifEmpty { "Extracting text..." },
+            text = progressMessage.ifEmpty { "Processing..." },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -484,88 +648,9 @@ private fun ProcessingContent(progressMessage: String) {
 }
 
 @Composable
-private fun ExtractedTextContent(ocrResult: OcrResult) {
-    val hasArabic = ocrResult.languages.contains("ara") ||
-            ocrResult.text.any { it.code in 0x0600..0x06FF }
-
-    val textDirection = if (hasArabic) TextDirection.Rtl else TextDirection.Ltr
-
-    // Custom selection colors for better visibility
-    val customSelectionColors = TextSelectionColors(
-        handleColor = MaterialTheme.colorScheme.primary,
-        backgroundColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-    )
-    
-    // Detect smart actions from OCR text (URLs, emails, phones)
-    val detectedActions = remember(ocrResult.text) {
-        ScanActionDetector.detectActions(
-            text = ocrResult.text,
-            valueType = null // No ML Kit type for OCR text
-        )
-    }
-
-    Column {
-        // Smart Actions Row (if any detected)
-        if (detectedActions.isNotEmpty()) {
-            ScanActionsRow(actions = detectedActions)
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-        
-        CompositionLocalProvider(
-            LocalTextSelectionColors provides customSelectionColors
-        ) {
-            SelectionContainer {
-                Text(
-                    text = ocrResult.text,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        textDirection = textDirection,
-                        lineHeight = MaterialTheme.typography.bodyLarge.lineHeight * 1.5f
-                    ),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    textAlign = if (hasArabic) TextAlign.End else TextAlign.Start,
-                    modifier = Modifier.padding(vertical = 8.dp)
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // Metadata row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = "Confidence: ${ocrResult.confidence}%",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Text(
-                text = "Time: ${ocrResult.processingTimeMs}ms",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-        }
-    }
-}
-
-@Composable
 private fun EmptyResultContent() {
     Text(
-        text = "No text detected in this image.\nTry with a clearer image or different lighting.",
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 24.dp)
-    )
-}
-
-@Composable
-private fun WaitingContent() {
-    Text(
-        text = "Select an image to extract text.",
+        text = "No AI result available.\nSelect an image from the home screen.",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         textAlign = TextAlign.Center,

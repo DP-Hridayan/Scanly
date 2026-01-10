@@ -1,10 +1,13 @@
 package com.skeler.scanely.history.data
 
 import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 
 data class HistoryItem(
     val id: String = UUID.randomUUID().toString(),
@@ -13,13 +16,18 @@ data class HistoryItem(
     val timestamp: Long = System.currentTimeMillis()
 )
 
-class HistoryManager(private val context: Context) {
+@Singleton
+class HistoryManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
     private val historyFile = File(context.filesDir, "scan_history.json")
 
     fun saveItem(text: String, imageUri: String) {
         val currentList = getHistory().toMutableList()
         currentList.add(0, HistoryItem(text = text, imageUri = imageUri))
-        saveHistory(currentList)
+        // Keep only last 50 items
+        val trimmedList = currentList.take(50)
+        saveHistory(trimmedList)
     }
 
     fun getHistory(): List<HistoryItem> {

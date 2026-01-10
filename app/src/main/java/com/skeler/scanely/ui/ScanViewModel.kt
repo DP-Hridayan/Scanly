@@ -6,27 +6,36 @@ import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.skeler.scanely.history.data.HistoryManager
-import com.skeler.scanely.ocr.OcrEngine
-import com.skeler.scanely.ocr.OcrResult
-import com.skeler.scanely.ocr.PdfProcessor
+import com.skeler.scanely.core.network.NetworkObserver
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+import com.skeler.scanely.core.ocr.PdfRendererHelper
 
 private const val TAG = "ScanViewModel"
 
 /**
+ * Rate limit configuration.
+ * 2 requests allowed, then 60 seconds cooldown.
+ * Example: Extract (1) + Translate (2) = cooldown starts.
+ */
+private const val MAX_REQUESTS_BEFORE_COOLDOWN = 2
+private const val RATE_LIMIT_MS = 60_000L
+private const val RATE_LIMIT_SECONDS = 60
+
+/**
  * UI State for scanning operations.
- * Single source of truth for all OCR-related UI state.
  */
 data class ScanUiState(
     val currentLanguages: List<String> = emptyList(),
@@ -35,13 +44,33 @@ data class ScanUiState(
     val progressPercent: Float = 0f,
     val selectedImageUri: Uri? = null,
     val pdfThumbnail: Bitmap? = null,
-    val ocrResult: OcrResult? = null,
-    val error: String? = null
+    val error: String? = null,
+    /** Text restored from history (no re-extraction needed) */
+    val historyText: String? = null
+)
+
+/**
+ * Rate limiting state for gamified UI feedback.
+ *
+ * Deep Reasoning (ULTRATHINK):
+ * - StateFlow chosen over Handler/MutableState for lifecycle-aware, 
+ *   thread-safe emissions that survive configuration changes
+ * - Progress as 0.0-1.0 Float allows smooth LinearProgressIndicator animation
+ * - Separate from ScanUiState to avoid unnecessary recomposition of unrelated UI
+ */
+data class RateLimitState(
+    /** Remaining seconds until next AI request allowed (60 → 0) */
+    val remainingSeconds: Int = 0,
+    /** Progress from 0.0 (just started) to 1.0 (ready) */
+    val progress: Float = 1.0f,
+    /** Whether the "ready" haptic has been triggered */
+    val justBecameReady: Boolean = false,
+    /** Number of requests made in current window (0-2) */
+    val requestCount: Int = 0
 )
 
 @Singleton
 class ScanStateHolder @Inject constructor() {
-
     private val _uiState = MutableStateFlow(ScanUiState())
     val uiState: StateFlow<ScanUiState> = _uiState.asStateFlow()
 
@@ -55,235 +84,223 @@ class ScanStateHolder @Inject constructor() {
 }
 
 /**
- * ViewModel for OCR scanning operations.
+ * ViewModel for scanning operations.
  *
  * Features:
- * - MVVM with StateFlow
- * - Proper resource cleanup in onCleared()
- * - Cancellable processing jobs
- * - Single source of truth for preview state
+ * - 2-request rate limiting (Extract + Translate, then cooldown)
+ * - StateFlow-based countdown for reactive UI
+ * - Haptic feedback trigger on cooldown completion
+ * - Network awareness for hiding offline-dependent actions
  */
 @HiltViewModel
 class ScanViewModel @Inject constructor(
-    @param:ApplicationContext private val context: Context,
-    private val stateHolder: ScanStateHolder
+    @ApplicationContext private val context: Context,
+    private val stateHolder: ScanStateHolder,
+    private val networkObserver: NetworkObserver,
+    private val pdfRendererHelper: PdfRendererHelper
 ) : ViewModel() {
 
     val uiState: StateFlow<ScanUiState> = stateHolder.uiState
 
-    private val ocrEngine = OcrEngine(context)
-    private val historyManager = HistoryManager(context)
+    // ========== Network State ==========
 
-    // Current settings (can be updated from UI)
+    /**
+     * Reactive online state from NetworkObserver.
+     * UI should hide Translate button when false.
+     */
+    val isOnline: StateFlow<Boolean> = networkObserver.isOnline
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = true // Optimistic default
+        )
 
-    // Track active processing job for cancellation
+    // ========== Gamified Rate Limiting State ==========
+
+    private val _rateLimitState = MutableStateFlow(RateLimitState())
+    val rateLimitState: StateFlow<RateLimitState> = _rateLimitState.asStateFlow()
+
+    /**
+     * Controls visibility of RateLimitSheet modal.
+     */
+    private val _showRateLimitSheet = MutableStateFlow(false)
+    val showRateLimitSheet: StateFlow<Boolean> = _showRateLimitSheet.asStateFlow()
+
+    /**
+     * Timestamp when cooldown started.
+     */
+    private var cooldownStartTimestamp: Long = 0L
+
+    /**
+     * Active countdown coroutine job.
+     */
+    private var cooldownJob: Job? = null
+
     private var currentProcessingJob: Job? = null
 
+    // ========== Rate Limit Sheet Control ==========
+
+    fun dismissRateLimitSheet() {
+        _showRateLimitSheet.value = false
+    }
+
+    // ========== Rate Limited Request Trigger ==========
+
     /**
-     * Update OCR languages and reinitialize engine.
+     * Execute an AI request with 2-request rate limiting.
+     *
+     * Logic:
+     * - If currently in cooldown (remainingSeconds > 0), show sheet
+     * - Otherwise, increment request count
+     * - If count reaches MAX_REQUESTS_BEFORE_COOLDOWN (2), start 60s cooldown + show sheet
+     *
+     * @param onAllowed Callback executed only if rate limit allows
+     * @return true if request was allowed, false if rate limited
      */
+    fun triggerAiWithRateLimit(onAllowed: () -> Unit): Boolean {
+        val currentState = _rateLimitState.value
+        val now = System.currentTimeMillis()
+
+        // Check if currently in cooldown
+        if (currentState.remainingSeconds > 0) {
+            _showRateLimitSheet.value = true
+            return false
+        }
+
+        // Check if cooldown has expired (reset counter if past cooldown period)
+        if (cooldownStartTimestamp > 0 && now - cooldownStartTimestamp >= RATE_LIMIT_MS) {
+            // Cooldown expired, reset
+            cooldownStartTimestamp = 0L
+            _rateLimitState.value = RateLimitState(requestCount = 0)
+        }
+
+        val newCount = currentState.requestCount + 1
+
+        // Allow the request
+        onAllowed()
+
+        if (newCount >= MAX_REQUESTS_BEFORE_COOLDOWN) {
+            // Hit the limit, start cooldown
+            cooldownStartTimestamp = now
+            _rateLimitState.value = currentState.copy(requestCount = newCount)
+            _showRateLimitSheet.value = true
+            startCooldown()
+        } else {
+            // Still under limit, just increment
+            _rateLimitState.value = currentState.copy(requestCount = newCount)
+        }
+
+        return true
+    }
+
+    /**
+     * Check if currently rate limited.
+     */
+    val isRateLimited: Boolean
+        get() = _rateLimitState.value.remainingSeconds > 0
+
+    /**
+     * Start countdown from full cooldown period.
+     *
+     * Deep Reasoning (ULTRATHINK):
+     * - viewModelScope ensures automatic cancellation on ViewModel clear
+     * - Dispatchers.Main for UI-safe state emissions
+     * - Progress = 1.0 - (remaining / total) for filling animation
+     * - justBecameReady flag triggers haptic exactly once
+     * - Reset requestCount to 0 after cooldown completes
+     */
+    private fun startCooldown() {
+        cooldownJob?.cancel()
+
+        cooldownJob = viewModelScope.launch(Dispatchers.Main) {
+            var remaining = RATE_LIMIT_SECONDS
+
+            // Initial state
+            _rateLimitState.value = RateLimitState(
+                remainingSeconds = remaining,
+                progress = 0f,
+                justBecameReady = false,
+                requestCount = MAX_REQUESTS_BEFORE_COOLDOWN
+            )
+
+            while (remaining > 0) {
+                delay(1000L)
+                remaining--
+
+                val progress = 1.0f - (remaining.toFloat() / RATE_LIMIT_SECONDS)
+
+                _rateLimitState.value = RateLimitState(
+                    remainingSeconds = remaining,
+                    progress = progress,
+                    justBecameReady = remaining == 0,
+                    requestCount = if (remaining == 0) 0 else MAX_REQUESTS_BEFORE_COOLDOWN
+                )
+            }
+
+            // Reset after cooldown
+            delay(100)
+            _rateLimitState.value = RateLimitState(
+                remainingSeconds = 0,
+                progress = 1.0f,
+                justBecameReady = false,
+                requestCount = 0
+            )
+            cooldownStartTimestamp = 0L
+        }
+    }
+
+    // ========== Image/PDF Selection ==========
+
     fun updateLanguages(languages: Set<String>) {
         if (languages.isEmpty()) return
-
         stateHolder.update {
-            it.copy(
-                currentLanguages = languages.toList()
-            )
-        }
-        viewModelScope.launch(Dispatchers.IO) {
-            ocrEngine.initialize(uiState.value.currentLanguages)
+            it.copy(currentLanguages = languages.toList())
         }
     }
 
-    /**
-     * Called when a generic image (Camera or Gallery) is selected.
-     * Clears any previous PDF state to fix the preview bug.
-     */
     fun onImageSelected(uri: Uri) {
-        // Cancel any ongoing processing
         currentProcessingJob?.cancel()
-
-        // Reset state completely for new image
         stateHolder.update {
             it.copy(
                 selectedImageUri = uri,
-                isProcessing = true,
-                progressMessage = "Processing image..."
+                isProcessing = false,
+                progressMessage = "",
+                historyText = null // Clear any previous history text
             )
         }
-
-        currentProcessingJob = processImage(uri)
     }
 
     /**
-     * Called when a PDF is selected.
+     * Set text from history (skips re-extraction).
      */
+    fun setHistoryText(text: String) {
+        stateHolder.update {
+            it.copy(historyText = text)
+        }
+    }
+
     fun onPdfSelected(uri: Uri) {
-        // Cancel any ongoing processing
         currentProcessingJob?.cancel()
-
         stateHolder.update {
             it.copy(
                 selectedImageUri = uri,
                 isProcessing = true,
-                progressMessage = "Initializing PDF Processor..."
+                progressMessage = "Opening PDF..."
             )
         }
-
-        currentProcessingJob = processPdf(uri)
-    }
-
-    /**
-     * Called when a Barcode is scanned (usually directly from Camera).
-     */
-    fun onBarcodeScanned(result: OcrResult) {
-        stateHolder.update {
-            it.copy(
-                ocrResult = result,
-                isProcessing = false
-            )
-        }
-
-        // Save barcode to history
-        if (result.text.isNotEmpty()) {
-            viewModelScope.launch(Dispatchers.IO) {
-                historyManager.saveItem(result.text, "barcode")
+        
+        // Generate thumbnail from first page
+        viewModelScope.launch {
+            val thumbnail = pdfRendererHelper.renderPage(uri, 0)
+            stateHolder.update {
+                it.copy(
+                    pdfThumbnail = thumbnail,
+                    isProcessing = false
+                )
             }
         }
     }
 
-    /**
-     * Handles processing of a single image for Text OCR.
-     */
-    private fun processImage(uri: Uri): Job {
-        return viewModelScope.launch(Dispatchers.IO) {
-            try {
-                // Ensure initialized
-                if (!ocrEngine.isReady()) {
-                    stateHolder.update { it.copy(progressMessage = "Initializing OCR...") }
-                    ocrEngine.initialize(uiState.value.currentLanguages)
-                }
-
-                stateHolder.update { it.copy(progressMessage = "Extracting text...") }
-
-                val result = ocrEngine.recognizeText(uri)
-
-                if (result != null) {
-                    stateHolder.update {
-                        it.copy(
-                            isProcessing = false,
-                            ocrResult = result,
-                            progressMessage = "",
-                            error = null
-                        )
-                    }
-
-                    // Auto-save to history
-                    if (result.text.isNotEmpty()) {
-                        historyManager.saveItem(result.text, uri.toString())
-                    }
-
-                    Log.d(
-                        TAG,
-                        "Image OCR completed: ${result.text.length} chars, ${result.confidence}% confidence"
-                    )
-                } else {
-                    stateHolder.update {
-                        it.copy(
-                            isProcessing = false,
-                            error = "Failed to recognize text. Try adjusting the image."
-                        )
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Image processing error", e)
-                stateHolder.update {
-                    it.copy(
-                        isProcessing = false,
-                        error = e.message ?: "Unknown error"
-                    )
-                }
-            }
-        }
-    }
-
-    /**
-     * Handles processing of PDF documents.
-     */
-    private fun processPdf(uri: Uri): Job {
-        return viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val tesseractHelper = ocrEngine.getTesseractHelper()
-
-                // Ensure initialized
-                if (!tesseractHelper.isReady()) {
-                    stateHolder.update { it.copy(progressMessage = "Initializing OCR...") }
-                    tesseractHelper.initialize(uiState.value.currentLanguages)
-                }
-
-                val pdfResult = PdfProcessor.extractTextFromPdf(
-                    context = context,
-                    pdfUri = uri,
-                    ocrHelper = tesseractHelper,
-                    enabledLanguages = uiState.value.currentLanguages,
-                    onProgress = { update ->
-                        val percent = if (update.totalPages > 0) {
-                            update.currentPage.toFloat() / update.totalPages
-                        } else 0f
-
-                        stateHolder.update {
-                            it.copy(
-                                progressMessage = update.statusMessage,
-                                progressPercent = percent
-                            )
-                        }
-                    }
-                )
-
-                // Create OcrResult wrapper for UI
-                val finalResult = OcrResult(
-                    text = pdfResult.text,
-                    confidence = pdfResult.averageConfidence,
-                    languages = listOf(pdfResult.detectedLanguage),
-                    processingTimeMs = 0
-                )
-
-                stateHolder.update {
-                    it.copy(
-                        isProcessing = false,
-                        pdfThumbnail = pdfResult.thumbnail,
-                        ocrResult = finalResult,
-                        progressMessage = "",
-                        progressPercent = 1f,
-                        error = null
-                    )
-                }
-
-                if (pdfResult.text.isNotEmpty()) {
-                    historyManager.saveItem(pdfResult.text, uri.toString())
-                }
-
-                Log.d(
-                    TAG,
-                    "PDF OCR completed: ${pdfResult.pageCount} pages, ${pdfResult.averageConfidence}% avg confidence"
-                )
-
-            } catch (e: Exception) {
-                Log.e(TAG, "PDF processing error", e)
-                stateHolder.update {
-                    it.copy(
-                        isProcessing = false,
-                        error = e.message ?: "PDF Error"
-                    )
-                }
-            }
-        }
-    }
-
-
-    /**
-     * Cancel any ongoing processing.
-     */
     fun cancelProcessing() {
         currentProcessingJob?.cancel()
         stateHolder.update {
@@ -295,21 +312,15 @@ class ScanViewModel @Inject constructor(
         }
     }
 
-    /**
-     * Clear state when leaving results screen or starting new scan.
-     */
     fun clearState() {
         cancelProcessing()
         stateHolder.reset()
     }
 
-    /**
-     * Clean up resources when ViewModel is destroyed.
-     */
     override fun onCleared() {
         super.onCleared()
         cancelProcessing()
-        ocrEngine.release()
-        Log.d(TAG, "ScanViewModel cleared, resources released")
+        cooldownJob?.cancel()
+        Log.d(TAG, "ScanViewModel cleared")
     }
 }

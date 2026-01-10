@@ -17,14 +17,26 @@ android {
         applicationId = "com.skeler.scanely"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.6.0-beta.1"
+        versionCode = 7
+        versionName = "2.4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
         ndk {
             abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64"))
         }
+
+        // Inject API key from local.properties (gitignored)
+        val localProperties = Properties()
+        val localPropertiesFile = rootProject.file("local.properties")
+        if (localPropertiesFile.exists()) {
+            localPropertiesFile.inputStream().use { localProperties.load(it) }
+        }
+        buildConfigField(
+            "String",
+            "GEMINI_API_KEY",
+            "\"${localProperties.getProperty("GEMINI_API_KEY") ?: ""}\""
+        )
     }
 
     lint {
@@ -117,14 +129,16 @@ dependencies {
     // Accompanist Permissions
     implementation(libs.accompanist.permissions)
     
-    // Tesseract OCR
-    implementation(libs.tesseract4android)
+    // OCR/ML Kit dependencies removed
     
-    // ML Kit Barcode Scanning
-    implementation(libs.mlkit.barcode)
+    // Google Generative AI (Gemini)
+    implementation(libs.generativeai)
     
-    // ML Kit Text Recognition (High Quality OCR)
-    implementation(libs.mlkit.text.recognition)
+    // Google ML Kit Barcode Scanning
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    
+    // Google ML Kit Text Recognition (On-Device)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     
     // Testing
     testImplementation(libs.junit)

@@ -19,10 +19,10 @@ import com.skeler.scanely.history.presentation.screen.HistoryScreen
 import com.skeler.scanely.settings.presentation.screen.LookAndFeelScreen
 import com.skeler.scanely.settings.presentation.screen.SettingsScreen
 import com.skeler.scanely.ui.ScanViewModel
-import com.skeler.scanely.ui.screens.BarcodeScannerScreen
 import com.skeler.scanely.ui.screens.CameraScreen
 import com.skeler.scanely.ui.screens.HomeScreen
 import com.skeler.scanely.ui.screens.ResultsScreen
+import com.skeler.scanely.ui.screens.BarcodeScannerScreen
 
 object Routes {
     const val HOME = "home"

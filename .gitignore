@@ -9,3 +9,6 @@
 .cxx
 local.properties
 *.apk
+*.jks
+*.keystore
+release_log*.txt
